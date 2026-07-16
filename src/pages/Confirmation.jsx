@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Check, Package, Truck, MapPin, ArrowRight } from "lucide-react";
 import { useCart } from "@/context/CartContext";
+import { parsePrice } from "@/data/products";
 
 export default function Confirmation() {
   const { order } = useCart();
@@ -137,7 +138,7 @@ export default function Confirmation() {
                     </div>
                   </div>
                   <span className="font-serif text-sm">
-                    €{(parseFloat(item.price.replace("€", "").replace(",", "")) * item.qty).toLocaleString()}
+                    {parsePrice(typeof item.price === "number" ? item.price * item.qty : parseFloat(String(item.price).replace("€", "").replace(",", "")) * item.qty)}
                   </span>
                 </div>
               ))}

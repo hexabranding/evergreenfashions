@@ -5,7 +5,7 @@ import { Mail } from "lucide-react";
 const menuItems = [
   { number: "01", label: "Men", path: "/collection" },
   { number: "02", label: "Women", path: "/collection" },
-  { number: "03", label: "Rental", path: "/collection" },
+  { number: "03", label: "Rental", path: "/rental" },
   { number: "04", label: "Footwear", path: "/collection" },
   { number: "05", label: "Suits", path: "/collection" },
   { number: "06", label: "Accessories", path: "/collection" },

@@ -3,46 +3,9 @@ import { useState } from "react";
 import { Heart } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useCart } from "@/context/CartContext";
-import dressHero from "@/assets/dress-hero.png";
-import dress2 from "@/assets/dress-2.png";
-import dress3 from "@/assets/dress-3.png";
-import dress4 from "@/assets/dress-4.png";
+import { allProducts, colorMap, parsePrice } from "@/data/products";
 
-const categories = ["All", "Gowns", "Outerwear", "Dresses", "Coats", "Accessories"];
-
-const colorMap = {
-  Red: "#b41e28",
-  Black: "#1a1a1a",
-  Ivory: "#f5f0e8",
-  Navy: "#1a2744",
-  Charcoal: "#4a4a4a",
-  Camel: "#c4a46c",
-  Olive: "#5c5c3d",
-  Burgundy: "#6b1d3a",
-  Emerald: "#2d6a4f",
-  Ruby: "#9b111e",
-  Blush: "#e8c4c4",
-  Sage: "#9caf88",
-  Bordeaux: "#6b1d3a",
-  Midnight: "#1a1a2e",
-  Pearl: "#f0ead6",
-  Dove: "#b0b0a8",
-  Champagne: "#f7e7ce",
-  Sand: "#c2b280",
-  Espresso: "#3c2415",
-  Cream: "#fffdd0",
-};
-
-const allProducts = [
-  { name: "Écarlate Gown", price: "€1,290", tag: "Signature", img: dressHero, category: "Gowns", colors: ["Red", "Black", "Ivory", "Navy"] },
-  { name: "Noir Silhouette", price: "€890", tag: "New", img: dress2, category: "Dresses", colors: ["Black", "Charcoal"] },
-  { name: "Camel Trench", price: "€1,150", tag: "Icon", img: dress3, category: "Outerwear", colors: ["Camel", "Black", "Olive", "Burgundy", "Navy"] },
-  { name: "Émeraude Satin", price: "€1,420", tag: "Couture", img: dress4, category: "Gowns", colors: ["Emerald", "Ruby"] },
-  { name: "Ivoire Draped", price: "€980", tag: "New", img: dressHero, category: "Dresses", colors: ["Ivory", "Blush", "Sage"] },
-  { name: "Bordeaux Velvet", price: "€1,650", tag: "Signature", img: dress2, category: "Coats", colors: ["Bordeaux", "Midnight"] },
-  { name: "Perle Chiffon", price: "€1,100", tag: "Icon", img: dress3, category: "Dresses", colors: ["Pearl", "Dove", "Champagne", "Black"] },
-  { name: "Sable Wrap", price: "€1,340", tag: "Couture", img: dress4, category: "Outerwear", colors: ["Sand", "Espresso", "Cream"] },
-];
+const categories = ["All", "Dresses", "Apparel", "Shoes", "Menswear", "Womenswear"];
 
 export default function Collection() {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
@@ -51,6 +14,10 @@ export default function Collection() {
   const filtered =
     activeCategory === "All"
       ? allProducts
+      : activeCategory === "Menswear"
+      ? allProducts.filter((p) => p.gender === "Menswear")
+      : activeCategory === "Womenswear"
+      ? allProducts.filter((p) => p.gender === "Womenswear")
       : allProducts.filter((p) => p.category === activeCategory);
 
   return (
@@ -91,7 +58,11 @@ export default function Collection() {
             {cat}
             {cat !== "All" && (
               <span className="ml-1.5 text-[9px] opacity-60">
-                ({allProducts.filter((p) => p.category === cat).length})
+                ({cat === "Menswear"
+                  ? allProducts.filter((p) => p.gender === "Menswear").length
+                  : cat === "Womenswear"
+                  ? allProducts.filter((p) => p.gender === "Womenswear").length
+                  : allProducts.filter((p) => p.category === cat).length})
               </span>
             )}
           </button>
@@ -112,7 +83,7 @@ export default function Collection() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-10">
           {filtered.map((p, i) => (
             <motion.article
-              key={`${p.name}-${i}`}
+              key={`${p.id}-${i}`}
               initial={{ opacity: 0, y: 60 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
@@ -123,7 +94,7 @@ export default function Collection() {
               }}
               className="group cursor-pointer"
             >
-              <Link to={`/product/${p.name.toLowerCase().replace(/\s+/g, "-")}`}>
+              <Link to={`/product/${p.id}`}>
                 <div className="relative aspect-[3/4] bg-secondary overflow-hidden mb-4">
                   <div className="absolute top-4 left-4 z-10 bg-background px-3 py-1 text-[10px] tracking-[0.2em] uppercase">
                     {p.tag}
@@ -168,7 +139,7 @@ export default function Collection() {
                 <div className="flex-1">
                   <h3 className="font-serif text-xl">{p.name}</h3>
                   <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
-                    {p.category}
+                    {p.gender} · {p.category}
                   </p>
                   {/* Color swatches */}
                   <div className="flex gap-1.5 mt-2">
@@ -182,7 +153,7 @@ export default function Collection() {
                     ))}
                   </div>
                 </div>
-                <span className="font-serif text-lg">{p.price}</span>
+                <span className="font-serif text-lg">{parsePrice(p.price)}</span>
               </div>
             </motion.article>
           ))}

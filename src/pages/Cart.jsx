@@ -1,15 +1,18 @@
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, ArrowRight } from "lucide-react";
+import { Minus, Plus, Trash2, ArrowRight, Tag, X } from "lucide-react";
+import { useState } from "react";
 import { useCart } from "@/context/CartContext";
+import { parsePrice } from "@/data/products";
 
 export default function Cart() {
-  const { cartItems, removeFromCart, updateQty } = useCart();
+  const {
+    cartItems, removeFromCart, updateQty,
+    cartSubtotal, cartTotal, coupon, couponError,
+    applyCoupon, removeCoupon, discount, freeShipping,
+  } = useCart();
   const navigate = useNavigate();
-  const subtotal = cartItems.reduce(
-    (sum, item) => sum + parseFloat(item.price.replace("€", "").replace(",", "")) * item.qty,
-    0
-  );
+  const [code, setCode] = useState("");
 
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-20 min-h-[60vh]">
@@ -41,7 +44,7 @@ export default function Cart() {
           <div className="lg:col-span-2 flex flex-col gap-6">
             {cartItems.map((item, i) => (
               <motion.div
-                key={item.name}
+                key={`${item.name}-${item.selectedSize || ""}-${item.selectedColor || ""}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
@@ -64,14 +67,30 @@ export default function Cart() {
                         <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
                           {item.tag}
                         </p>
+                        {item.isRental && item.rentalDetails && (
+                          <p className="text-[10px] text-crimson tracking-wider mt-1">
+                            Rental · {item.rentalDetails.rentalDays} days · {item.rentalDetails.startDate} to {item.rentalDetails.endDate}
+                          </p>
+                        )}
+                        {(item.selectedSize || item.selectedColor) && (
+                          <p className="text-[10px] text-muted-foreground tracking-wider mt-1">
+                            {item.selectedColor && `Color: ${item.selectedColor}`}
+                            {item.selectedColor && item.selectedSize && " · "}
+                            {item.selectedSize && `Size: ${item.selectedSize}`}
+                          </p>
+                        )}
                       </div>
-                      <span className="font-serif text-lg">{item.price}</span>
+                      <span className="font-serif text-lg">
+                        {item.isRental && item.rentalDetails
+                          ? parsePrice(item.rentalDetails.rentalPricePerDay * item.rentalDetails.rentalDays * item.qty)
+                          : parsePrice(item.price * item.qty)}
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-4">
                     <div className="flex items-center gap-3 border border-border">
                       <button
-                        onClick={() => updateQty(item.name, item.qty - 1)}
+                        onClick={() => updateQty(item.name, item.selectedSize, item.selectedColor, item.qty - 1)}
                         className="w-8 h-8 flex items-center justify-center hover:bg-secondary transition-colors"
                       >
                         <Minus className="w-3 h-3" />
@@ -80,14 +99,14 @@ export default function Cart() {
                         {item.qty}
                       </span>
                       <button
-                        onClick={() => updateQty(item.name, item.qty + 1)}
+                        onClick={() => updateQty(item.name, item.selectedSize, item.selectedColor, item.qty + 1)}
                         className="w-8 h-8 flex items-center justify-center hover:bg-secondary transition-colors"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
                     </div>
                     <button
-                      onClick={() => removeFromCart(item.name)}
+                      onClick={() => removeFromCart(item.name, item.selectedSize, item.selectedColor)}
                       className="text-muted-foreground hover:text-crimson transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -103,16 +122,59 @@ export default function Cart() {
             <h2 className="font-serif text-2xl mb-6">Order Summary</h2>
             <div className="flex justify-between text-sm mb-3">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>€{subtotal.toLocaleString()}</span>
+              <span>{parsePrice(cartSubtotal)}</span>
             </div>
             <div className="flex justify-between text-sm mb-3">
               <span className="text-muted-foreground">Shipping</span>
-              <span className="text-crimson">Free</span>
+              <span className={freeShipping ? "text-crimson" : ""}>{freeShipping ? "Free" : "Free"}</span>
             </div>
+
+            {/* Coupon */}
+            <div className="my-4">
+              {coupon ? (
+                <div className="flex items-center justify-between bg-crimson/10 border border-crimson/20 px-3 py-2">
+                  <div className="flex items-center gap-2 text-[11px] text-crimson">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span className="font-medium">{coupon.code}</span>
+                    <span className="text-muted-foreground">— {coupon.label}</span>
+                  </div>
+                  <button onClick={removeCoupon} className="text-muted-foreground hover:text-crimson">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="Coupon code"
+                    className="flex-1 border border-border px-3 py-2 text-[11px] tracking-wider uppercase focus:outline-none focus:border-foreground transition-colors"
+                  />
+                  <button
+                    onClick={() => {
+                      if (applyCoupon(code)) setCode("");
+                    }}
+                    className="px-4 py-2 border border-foreground text-[10px] tracking-[0.15em] uppercase hover:bg-foreground hover:text-background transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+              {couponError && <p className="text-[10px] text-crimson mt-1">{couponError}</p>}
+            </div>
+
+            {discount > 0 && (
+              <div className="flex justify-between text-sm mb-3 text-crimson">
+                <span>Discount</span>
+                <span>-{parsePrice(discount)}</span>
+              </div>
+            )}
+
             <div className="border-t border-border my-4" />
             <div className="flex justify-between font-serif text-xl mb-8">
               <span>Total</span>
-              <span>€{subtotal.toLocaleString()}</span>
+              <span>{parsePrice(cartTotal)}</span>
             </div>
             <button
               onClick={() => navigate("/checkout")}

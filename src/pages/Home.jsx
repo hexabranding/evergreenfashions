@@ -3,35 +3,44 @@ import { useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Heart, Star } from "lucide-react";
 import { useCart } from "@/context/CartContext";
-import dressHero from "@/assets/dress-hero.png";
-import dress2 from "@/assets/dress-2.png";
-import dress3 from "@/assets/dress-3.png";
-import dress4 from "@/assets/dress-4.png";
+import { allProducts, parsePrice, colorMap } from "@/data/products";
+
+const dressHero = allProducts.find(p => p.id === "ecarlate-gown")?.img;
+const dress2 = allProducts.find(p => p.id === "noir-silhouette")?.img;
+const dress3 = allProducts.find(p => p.id === "camel-trench")?.img;
+const dress4 = allProducts.find(p => p.id === "emeraude-gown")?.img;
+const dress5 = allProducts.find(p => p.id === "satin-ecarlate")?.img;
+const dress6 = allProducts.find(p => p.id === "sable-wrap-coat")?.img;
+const dress7 = allProducts.find(p => p.id === "noir-blazer")?.img;
+const dress8 = allProducts.find(p => p.id === "derby-leather")?.img;
+const dress10 = allProducts.find(p => p.id === "chelsea-suede")?.img;
+const gress9 = allProducts.find(p => p.id === "stiletto-suede")?.img;
 
 const heroSlides = [
-  { img: dressHero, name: "Écarlate Gown", price: "€1,290", tag: "Signature" },
-  { img: dress2, name: "Noir Silhouette", price: "€890", tag: "New" },
-  { img: dress3, name: "Camel Trench", price: "€1,150", tag: "Icon" },
-  { img: dress4, name: "Émeraude Satin", price: "€1,420", tag: "Couture" },
+  { img: dressHero, name: "Écarlate Gown", price: 1290, tag: "Signature" },
+  { img: dress2, name: "Noir Silhouette", price: 890, tag: "New" },
+  { img: dress3, name: "Camel Trench", price: 1150, tag: "Icon" },
+  { img: dress4, name: "Émeraude Gown", price: 1420, tag: "Couture" },
 ];
 
-const products = [
-  { name: "Écarlate Gown", price: "€1,290", tag: "Signature", img: dressHero },
-  { name: "Noir Silhouette", price: "€890", tag: "New", img: dress2 },
-  { name: "Camel Trench", price: "€1,150", tag: "Icon", img: dress3 },
-  { name: "Émeraude Satin", price: "€1,420", tag: "Couture", img: dress4 },
-];
-
-const newArrivals = [
-  { name: "Noir Silhouette", price: "€890", tag: "New", img: dress2 },
-  { name: "Ivoire Draped", price: "€980", tag: "New", img: dressHero },
-  { name: "Perle Chiffon", price: "€1,100", tag: "New", img: dress3 },
-  { name: "Sable Wrap", price: "€1,340", tag: "New", img: dress4 },
-];
+const menswearProducts = allProducts.filter(p => p.gender === "Menswear");
+const womenswearProducts = allProducts.filter(p => p.gender === "Womenswear");
 
 export default function Home() {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const [heroIndex, setHeroIndex] = useState(0);
+  const [menCat, setMenCat] = useState("All");
+  const [womenCat, setWomenCat] = useState("All");
+
+  const menCategories = ["All", "Dresses", "Apparel", "Shoes"];
+  const womenCategories = ["All", "Dresses", "Apparel", "Shoes"];
+
+  const filteredMen = menCat === "All"
+    ? menswearProducts
+    : menswearProducts.filter(p => p.category === menCat);
+  const filteredWomen = womenCat === "All"
+    ? womenswearProducts
+    : womenswearProducts.filter(p => p.category === womenCat);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -46,14 +55,9 @@ export default function Home() {
     offset: ["start start", "end start"],
   });
   const dressY = useTransform(scrollYProgress, [0, 1], [0, 200]);
-  const dressRotate = useTransform(scrollYProgress, [0, 1], [0, -8]);
   const dressScale = useTransform(scrollYProgress, [0, 1], [1, 1.1]);
   const titleY = useTransform(scrollYProgress, [0, 1], [0, -100]);
   const titleOpacity = useTransform(scrollYProgress, [0, 0.6, 1], [1, 0.6, 0]);
-  const bgBlushY = useTransform(scrollYProgress, [0, 1], [0, -80]);
-  const bgCrimsonY = useTransform(scrollYProgress, [0, 1], [0, 120]);
-  const priceX = useTransform(scrollYProgress, [0, 1], [0, 60]);
-  const noteX = useTransform(scrollYProgress, [0, 1], [0, -40]);
 
   const { scrollY } = useScroll();
   const marqueeX = useTransform(scrollY, [0, 3000], [0, -400]);
@@ -65,17 +69,6 @@ export default function Home() {
         ref={heroRef}
         className="relative min-h-[92vh] overflow-hidden flex items-center"
       >
-        <div className="absolute inset-0 pointer-events-none">
-          <motion.div
-            style={{ y: bgBlushY }}
-            className="absolute top-1/4 -left-32 w-[400px] h-[400px] rounded-full bg-blush/40 blur-[140px]"
-          />
-          <motion.div
-            style={{ y: bgCrimsonY }}
-            className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-crimson/15 blur-[160px]"
-          />
-        </div>
-
         <div className="max-w-[1600px] mx-auto px-6 lg:px-20 relative z-10 w-full">
           <div className="relative grid grid-cols-12 gap-6 items-center min-h-[78vh]">
             {/* LEFT — Text with more padding */}
@@ -169,21 +162,9 @@ export default function Home() {
 
             {/* RIGHT — Dress image */}
             <motion.div
-              style={{ y: dressY, rotate: dressRotate, scale: dressScale }}
+              style={{ y: dressY, scale: dressScale }}
               className="col-span-12 lg:col-span-6 lg:col-start-7 row-start-1 relative h-[55vh] lg:h-[80vh] flex items-center justify-center pointer-events-none lg:pointer-events-auto z-20"
             >
-              {/* Rotating rings */}
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-[10%] border border-crimson/20 rounded-full"
-              />
-              <motion.div
-                animate={{ rotate: -360 }}
-                transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-[18%] border border-foreground/10 rounded-full"
-              />
-
               {/* Floating tag */}
               <AnimatePresence mode="wait">
                 <motion.div
@@ -192,7 +173,6 @@ export default function Home() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.6 }}
-                  style={{ x: priceX }}
                   className="absolute top-10 right-0 lg:right-4 z-20 bg-background/95 backdrop-blur px-5 py-4 shadow-2xl border border-border"
                 >
                   <div className="eyebrow">Look 0{heroIndex + 1} · {heroSlides[heroIndex].name.split(" ")[0]}</div>
@@ -203,22 +183,23 @@ export default function Home() {
               </AnimatePresence>
 
               {/* Dress — auto-rotating carousel */}
-              <div className="relative z-10 h-[90%] w-auto">
-                <AnimatePresence mode="wait">
+              <div className="relative z-10 h-[90%] w-full">
+                {heroSlides.map((slide, i) => (
                   <motion.img
-                    key={heroIndex}
-                    src={heroSlides[heroIndex].img}
-                    alt={heroSlides[heroIndex].name}
+                    key={i}
+                    src={slide.img}
+                    alt={slide.name}
                     width={1024}
                     height={1536}
-                    initial={{ opacity: 0, scale: 0.92, rotate: -3 }}
-                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                    exit={{ opacity: 0, scale: 1.05, rotate: 3 }}
+                    className="absolute inset-0 h-full w-full object-contain"
+                    initial={false}
+                    animate={{
+                      opacity: heroIndex === i ? 1 : 0,
+                      x: heroIndex === i ? 0 : heroIndex > i ? -80 : 80,
+                    }}
                     transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                    className="h-full w-auto object-contain animate-sway origin-top"
-                    style={{ filter: "drop-shadow(0 40px 60px rgba(180, 30, 40, 0.35))" }}
                   />
-                </AnimatePresence>
+                ))}
               </div>
 
               {/* Carousel dots */}
@@ -236,17 +217,6 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Floating particles */}
-              {[...Array(5)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="absolute w-1.5 h-1.5 rounded-full bg-crimson/40"
-                  style={{ left: `${20 + i * 14}%`, top: `${30 + (i % 3) * 20}%` }}
-                  animate={{ y: [0, -25, 0], opacity: [0.3, 0.7, 0.3] }}
-                  transition={{ duration: 3 + i * 0.5, repeat: Infinity, delay: i * 0.4 }}
-                />
-              ))}
-
               {/* Bottom note */}
               <AnimatePresence mode="wait">
                 <motion.div
@@ -255,7 +225,6 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ delay: 0.3, duration: 0.5 }}
-                  style={{ x: noteX }}
                   className="absolute bottom-24 right-2 lg:right-8 z-20 max-w-[200px] text-right"
                 >
                   <div className="w-10 h-px bg-foreground ml-auto mb-2" />
@@ -269,12 +238,12 @@ export default function Home() {
       </section>
 
       {/* Marquee band */}
-      <section className="bg-ink text-cream py-4 overflow-hidden">
+      <section className="bg-ink text-cream py-2 overflow-hidden">
         <motion.div style={{ x: marqueeX }} className="flex animate-marquee whitespace-nowrap">
-          {Array.from({ length: 2 }).map((_, r) => (
+          {Array.from({ length: 4 }).map((_, r) => (
             <div key={r} className="flex items-center gap-12 px-6">
-              {["Silk", "Cashmere", "Velvet", "Chiffon", "Organza", "Satin", "Wool", "Leather"].map((w) => (
-                <span key={w} className="text-3xl font-serif italic tracking-tight opacity-90">
+              {["Menswear", "Womenswear", "Apparel", "Sweaters", "Rental","Footwear","Accessories"].map((w) => (
+                <span key={w} className="text-2xl font-serif italic tracking-tight opacity-90">
                   {w} <span className="text-crimson">◆</span>
                 </span>
               ))}
@@ -283,34 +252,232 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Collection grid */}
-      <section id="collection" className="max-w-[1600px] mx-auto px-8 py-24">
-        <div className="flex items-end justify-between mb-12 flex-wrap gap-6">
-          <div>
-            <p className="eyebrow mb-3">— The Collection</p>
-            <h2 className="text-display text-4xl md:text-5xl">
-              Pieces that <em className="text-crimson">move</em>
-            </h2>
-          </div>
-          <a
-            href="#"
-            className="text-xs tracking-[0.2em] uppercase border-b border-foreground pb-1 hover:text-crimson hover:border-crimson transition-colors"
-          >
-            View All 48 Pieces →
-          </a>
-        </div>
+      {/* New Arrivals */}
+      <section id="new-arrivals" className="max-w-[1600px] mx-auto px-8 py-24">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ duration: 0.8 }}
+          className="mb-12"
+        >
+          <p className="eyebrow mb-3">— Just Landed</p>
+          <h2 className="text-display text-4xl md:text-5xl">
+            New <em className="text-crimson">Arrivals.</em>
+          </h2>
+          <p className="text-muted-foreground mt-4 max-w-lg text-sm leading-relaxed">
+            The latest additions to our atelier — fresh silhouettes, new fabrics,
+            and pieces that just arrived from our Parisian workshops.
+          </p>
+        </motion.div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          {products.map((p, i) => (
+          {allProducts.slice(0, 4).map((p, i) => (
             <motion.article
-              key={p.name}
+              key={`new-${p.id}-${i}`}
               initial={{ opacity: 0, y: 50 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: 0.8, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
               className="group cursor-pointer"
             >
-              <Link to={`/product/${p.name.toLowerCase().replace(/\s+/g, "-")}`}>
+              <Link to={`/product/${p.id}`}>
+                <div className="relative aspect-[3/4] bg-secondary overflow-hidden mb-3">
+                  <div className="absolute top-3 left-3 z-10 bg-ink text-cream px-2.5 py-1 text-[10px] tracking-[0.2em] uppercase">
+                    New
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      toggleWishlist(p);
+                    }}
+                    className="absolute top-3 right-3 z-10 w-8 h-8 bg-background/80 backdrop-blur rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${isWishlisted(p.name) ? "fill-crimson text-crimson" : ""}`}
+                    />
+                  </button>
+                  <motion.img
+                    src={p.img}
+                    alt={p.name}
+                    width={768}
+                    height={1024}
+                    loading="lazy"
+                    className="w-full h-full object-contain p-4 transition-transform duration-1000 group-hover:scale-105"
+                    whileHover={{ rotate: [0, -2, 2, 0] }}
+                    transition={{ duration: 1.5 }}
+                  />
+                  <div className="absolute inset-x-0 bottom-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        addToCart(p);
+                      }}
+                      className="w-full bg-ink text-cream py-3 text-[10px] tracking-[0.25em] uppercase hover:bg-crimson transition-colors"
+                    >
+                      Add to Bag
+                    </button>
+                  </div>
+                </div>
+              </Link>
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <h3 className="font-serif text-lg">{p.name}</h3>
+                  <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
+                    {p.gender} · {p.category}
+                  </p>
+                </div>
+                <span className="font-serif text-base">{parsePrice(p.price)}</span>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+
+        <div className="mt-12 text-center">
+          <Link
+            to="/collection"
+            className="inline-flex items-center gap-3 btn-ink btn-ink-hover"
+          >
+            View All New Arrivals <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </section>
+
+      {/* The Collection */}
+      <section id="collection" className="bg-secondary/30 py-24">
+        <div className="max-w-[1600px] mx-auto px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.8 }}
+            className="mb-12"
+          >
+            <p className="eyebrow mb-3">— Fall / Winter 2026</p>
+            <h2 className="text-display text-4xl md:text-5xl">
+              The <em className="text-crimson">Collection.</em>
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-lg text-sm leading-relaxed">
+              Every silhouette, every stitch — the complete lineup from our latest
+              collection. Browse all categories in one place.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 lg:gap-8">
+            {allProducts.slice(0, 10).map((p, i) => (
+              <motion.article
+                key={`col-${p.id}-${i}`}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.8, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                className="group cursor-pointer"
+              >
+                <Link to={`/product/${p.id}`}>
+                  <div className="relative aspect-[3/4] bg-background overflow-hidden mb-3">
+                    <div className="absolute top-3 left-3 z-10 bg-background px-2.5 py-1 text-[10px] tracking-[0.2em] uppercase">
+                      {p.tag}
+                    </div>
+                    <motion.img
+                      src={p.img}
+                      alt={p.name}
+                      width={768}
+                      height={1024}
+                      loading="lazy"
+                      className="w-full h-full object-contain p-4 transition-transform duration-1000 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          addToCart(p);
+                        }}
+                        className="w-full bg-ink text-cream py-3 text-[10px] tracking-[0.25em] uppercase hover:bg-crimson transition-colors"
+                      >
+                        Add to Bag
+                      </button>
+                    </div>
+                  </div>
+                </Link>
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <h3 className="font-serif text-base">{p.name}</h3>
+                    <div className="flex gap-1 mt-1.5">
+                      {p.colors.map((c) => (
+                        <span
+                          key={c}
+                          title={c}
+                          className="w-3 h-3 rounded-full border border-border/60"
+                          style={{ background: colorMap[c] || "#ccc" }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <span className="font-serif text-sm">{parsePrice(p.price)}</span>
+                </div>
+              </motion.article>
+            ))}
+          </div>
+
+          <div className="mt-12 text-center">
+            <Link
+              to="/collection"
+              className="inline-flex items-center gap-3 text-xs tracking-[0.2em] uppercase border-b border-foreground pb-1 hover:text-crimson hover:border-crimson transition-colors"
+            >
+              View Full Collection <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Shop Menswear */}
+      <section className="max-w-[1600px] mx-auto px-8 py-24">
+        <div className="flex items-end justify-between mb-8 flex-wrap gap-6">
+          <div>
+            <p className="eyebrow mb-3">— For Him</p>
+            <h2 className="text-display text-4xl md:text-5xl">
+              Shop <em className="text-crimson">Menswear.</em>
+            </h2>
+          </div>
+          <Link
+            to="/collection"
+            className="text-xs tracking-[0.2em] uppercase border-b border-foreground pb-1 hover:text-crimson hover:border-crimson transition-colors"
+          >
+            View All Menswear →
+          </Link>
+        </div>
+
+        {/* Category Tabs */}
+        <div className="flex gap-3 mb-10 flex-wrap">
+          {menCategories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setMenCat(cat)}
+              className={`px-5 py-2 text-[11px] tracking-[0.2em] uppercase border transition-all ${
+                menCat === cat
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border hover:border-foreground"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+          {filteredMen.map((p, i) => (
+            <motion.article
+              key={`m-${p.name}-${i}`}
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-60px" }}
+              transition={{ duration: 0.8, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
+              className="group cursor-pointer"
+            >
+              <Link to={`/product/${p.id}`}>
                 <div className="relative aspect-[3/4] bg-secondary overflow-hidden mb-3">
                   <div className="absolute top-3 left-3 z-10 bg-background px-2.5 py-1 text-[10px] tracking-[0.2em] uppercase">
                     {p.tag}
@@ -355,46 +522,63 @@ export default function Home() {
                 <div>
                   <h3 className="font-serif text-lg">{p.name}</h3>
                   <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
-                    4 Colors · Unisex
+                    Men's · {p.colors?.length || 0} Colors · {p.sizes?.length || 0} Sizes
                   </p>
                 </div>
-                <span className="font-serif text-base">{p.price}</span>
+                <span className="font-serif text-base">{parsePrice(p.price)}</span>
               </div>
             </motion.article>
           ))}
         </div>
       </section>
 
-      {/* New Arrivals */}
+      {/* Shop Womenswear */}
       <section className="max-w-[1600px] mx-auto px-8 py-24">
-        <div className="flex items-end justify-between mb-12 flex-wrap gap-6">
+        <div className="flex items-end justify-between mb-8 flex-wrap gap-6">
           <div>
-            <p className="eyebrow mb-3">— Just Arrived</p>
+            <p className="eyebrow mb-3">— For Her</p>
             <h2 className="text-display text-4xl md:text-5xl">
-              New <em className="text-crimson">arrivals.</em>
+              Shop <em className="text-crimson">Womenswear.</em>
             </h2>
           </div>
           <Link
             to="/collection"
             className="text-xs tracking-[0.2em] uppercase border-b border-foreground pb-1 hover:text-crimson hover:border-crimson transition-colors"
           >
-            View All New →
+            View All Womenswear →
           </Link>
         </div>
 
+        {/* Category Tabs */}
+        <div className="flex gap-3 mb-10 flex-wrap">
+          {womenCategories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setWomenCat(cat)}
+              className={`px-5 py-2 text-[11px] tracking-[0.2em] uppercase border transition-all ${
+                womenCat === cat
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border hover:border-foreground"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          {newArrivals.map((p, i) => (
+          {filteredWomen.map((p, i) => (
             <motion.article
-              key={p.name}
+              key={`w-${p.name}-${i}`}
               initial={{ opacity: 0, y: 50 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: 0.8, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
               className="group cursor-pointer"
             >
-              <Link to={`/product/${p.name.toLowerCase().replace(/\s+/g, "-")}`}>
+              <Link to={`/product/${p.id}`}>
                 <div className="relative aspect-[3/4] bg-secondary overflow-hidden mb-3">
-                  <div className="absolute top-3 left-3 z-10 bg-crimson text-cream px-2.5 py-1 text-[10px] tracking-[0.2em] uppercase">
+                  <div className="absolute top-3 left-3 z-10 bg-background px-2.5 py-1 text-[10px] tracking-[0.2em] uppercase">
                     {p.tag}
                   </div>
                   <button
@@ -437,10 +621,10 @@ export default function Home() {
                 <div>
                   <h3 className="font-serif text-lg">{p.name}</h3>
                   <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
-                    4 Colors · Unisex
+                    Women's · {p.colors?.length || 0} Colors · {p.sizes?.length || 0} Sizes
                   </p>
                 </div>
-                <span className="font-serif text-base">{p.price}</span>
+                <span className="font-serif text-base">{parsePrice(p.price)}</span>
               </div>
             </motion.article>
           ))}
@@ -459,7 +643,7 @@ export default function Home() {
           >
             <motion.img
               src={dress4}
-              alt="Emerald satin gown"
+              alt="Emerald evening gown"
               width={768}
               height={1024}
               loading="lazy"
