@@ -1,14 +1,14 @@
 import { Router } from 'express';
-import { randomUUID } from 'crypto';
-import { getDb, queryAll, queryOne, run, saveDb } from '../db.js';
+import Review from '../models/Review.js';
+import Product from '../models/Product.js';
+import User from '../models/User.js';
 import { authMiddleware, vendorOnly } from '../middleware/auth.js';
 
 const router = Router();
 
 router.get('/product/:productId', async (req, res) => {
   try {
-    await getDb();
-    const reviews = queryAll('SELECT * FROM reviews WHERE productId = ? ORDER BY date DESC', [req.params.productId]);
+    const reviews = await Review.find({ productId: req.params.productId }).sort({ createdAt: -1 }).lean();
     res.json(reviews);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -17,7 +17,6 @@ router.get('/product/:productId', async (req, res) => {
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    await getDb();
     const { productId, rating, comment } = req.body;
 
     if (!productId || !rating) {
@@ -28,23 +27,21 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Rating must be between 1 and 5' });
     }
 
-    const product = queryOne('SELECT id FROM products WHERE id = ?', [productId]);
+    const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const user = queryOne('SELECT firstName, lastName FROM users WHERE id = ?', [req.user.id]);
-    const id = randomUUID();
-    const now = new Date().toISOString();
+    const user = await User.findById(req.user.id);
+    const review = await Review.create({
+      productId,
+      userId: req.user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      rating,
+      comment: comment || '',
+    });
 
-    run(
-      'INSERT INTO reviews (id, productId, userId, userName, rating, comment, date, vendorReply) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, productId, req.user.id, `${user.firstName} ${user.lastName}`, rating, comment || '', now, null]
-    );
-    saveDb();
-
-    const review = queryOne('SELECT * FROM reviews WHERE id = ?', [id]);
-    res.status(201).json(review);
+    res.status(201).json(review.toObject());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -52,8 +49,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 router.put('/:id/reply', vendorOnly, async (req, res) => {
   try {
-    await getDb();
-    const review = queryOne('SELECT * FROM reviews WHERE id = ?', [req.params.id]);
+    const review = await Review.findById(req.params.id);
     if (!review) {
       return res.status(404).json({ error: 'Review not found' });
     }
@@ -63,11 +59,10 @@ router.put('/:id/reply', vendorOnly, async (req, res) => {
       return res.status(400).json({ error: 'Reply is required' });
     }
 
-    run('UPDATE reviews SET vendorReply = ? WHERE id = ?', [reply, req.params.id]);
-    saveDb();
+    review.vendorReply = reply;
+    await review.save();
 
-    const updated = queryOne('SELECT * FROM reviews WHERE id = ?', [req.params.id]);
-    res.json(updated);
+    res.json(review.toObject());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

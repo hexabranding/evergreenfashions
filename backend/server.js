@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { getDb } from './db.js';
+import { connectDB } from './db.js';
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
 import orderRoutes from './routes/orders.js';
@@ -29,7 +29,7 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-await getDb();
+await connectDB();
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { useOrders } from "@/context/OrderContext";
 
 const CartContext = createContext();
 
@@ -27,6 +28,7 @@ function getItemPrice(item) {
 }
 
 export function CartProvider({ children }) {
+  const { updateStock } = useOrders();
   const [cartItems, setCartItems] = useState(() => loadState("ef_cart", []));
   const [wishlist, setWishlist] = useState(() => loadState("ef_wishlist", []));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -153,12 +155,20 @@ export function CartProvider({ children }) {
           day: "numeric",
         }),
       };
+
+      cartItems.forEach((item) => {
+        if (item.selectedSize && item.qty > 0) {
+          const productId = item.id || item.slug || item.name;
+          updateStock(productId, item.selectedSize, item.qty);
+        }
+      });
+
       setOrder(newOrder);
       setCartItems([]);
       setCoupon(null);
       return newOrder;
     },
-    [cartItems, cartTotal, coupon, discount]
+    [cartItems, cartTotal, coupon, discount, updateStock]
   );
 
   const toggleWishlist = useCallback((product) => {

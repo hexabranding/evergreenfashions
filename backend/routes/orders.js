@@ -1,13 +1,12 @@
 import { Router } from 'express';
-import { randomUUID } from 'crypto';
-import { getDb, queryAll, queryOne, run, saveDb } from '../db.js';
+import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import { authMiddleware, vendorOnly } from '../middleware/auth.js';
 
 const router = Router();
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    await getDb();
     const { items, coupon, shipping, payment, rentalDetails } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -18,75 +17,59 @@ router.post('/', authMiddleware, async (req, res) => {
     const orderItems = [];
 
     for (const item of items) {
-      const product = queryOne('SELECT * FROM products WHERE id = ?', [item.productId]);
+      const product = await Product.findById(item.productId).lean();
       if (!product) {
         return res.status(400).json({ error: `Product ${item.productId} not found` });
       }
 
-      const inv = queryOne('SELECT * FROM inventory WHERE productId = ? AND size = ?', [item.productId, item.size]);
+      const inv = product.inventory?.find((i) => i.size === item.size);
       if (inv && inv.stock < item.quantity) {
         return res.status(400).json({ error: `Insufficient stock for ${product.name} size ${item.size}` });
       }
 
-      const itemTotal = product.price * item.quantity;
-      subtotal += itemTotal;
+      subtotal += product.price * item.quantity;
       orderItems.push({
-        ...item,
+        productId: item.productId,
         name: product.name,
         price: product.price,
+        quantity: item.quantity,
+        size: item.size,
+        color: item.color,
         img: product.img,
-        vendorId: product.vendorId
+        vendorId: product.vendorId,
       });
     }
 
     let discount = 0;
     if (coupon) {
-      if (coupon.type === 'percent') {
-        discount = Math.round(subtotal * (coupon.value / 100));
-      } else {
-        discount = coupon.value;
-      }
+      discount = coupon.type === 'percent' ? Math.round(subtotal * (coupon.value / 100)) : coupon.value;
     }
 
     const total = Math.max(0, subtotal - discount);
     const now = new Date().toISOString();
     const estimatedDelivery = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const orderId = randomUUID();
-    const timeline = [
-      { status: 'confirmed', date: now, description: 'Order placed successfully' }
-    ];
-
-    run(
-      'INSERT INTO orders (id, userId, items, subtotal, discount, total, coupon, shipping, payment, status, date, estimatedDelivery, rentalDetails, timeline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        orderId, req.user.id, JSON.stringify(orderItems), subtotal, discount, total,
-        coupon ? JSON.stringify(coupon) : null,
-        JSON.stringify(shipping || {}),
-        JSON.stringify(payment || {}),
-        'confirmed', now, estimatedDelivery,
-        rentalDetails ? JSON.stringify(rentalDetails) : null,
-        JSON.stringify(timeline)
-      ]
-    );
+    const order = await Order.create({
+      userId: req.user.id,
+      items: orderItems,
+      subtotal, discount, total,
+      coupon: coupon || null,
+      shipping: shipping || {},
+      payment: payment || {},
+      status: 'confirmed',
+      estimatedDelivery,
+      rentalDetails: rentalDetails || null,
+      timeline: [{ status: 'confirmed', date: now, description: 'Order placed successfully' }],
+    });
 
     for (const item of items) {
-      const inv = queryOne('SELECT id, stock FROM inventory WHERE productId = ? AND size = ?', [item.productId, item.size]);
-      if (inv) {
-        run('UPDATE inventory SET stock = stock - ? WHERE id = ?', [item.quantity, inv.id]);
-      }
+      await Product.updateOne(
+        { _id: item.productId, 'inventory.size': item.size },
+        { $inc: { 'inventory.$.stock': -item.quantity } }
+      );
     }
-    saveDb();
 
-    const order = queryOne('SELECT * FROM orders WHERE id = ?', [orderId]);
-    order.items = JSON.parse(order.items);
-    order.shipping = JSON.parse(order.shipping);
-    order.payment = JSON.parse(order.payment);
-    order.coupon = order.coupon ? JSON.parse(order.coupon) : null;
-    order.rentalDetails = order.rentalDetails ? JSON.parse(order.rentalDetails) : null;
-    order.timeline = JSON.parse(order.timeline);
-
-    res.status(201).json(order);
+    res.status(201).json(order.toObject());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -94,18 +77,8 @@ router.post('/', authMiddleware, async (req, res) => {
 
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    await getDb();
-    const orders = queryAll('SELECT * FROM orders WHERE userId = ? ORDER BY date DESC', [req.user.id]);
-    const result = orders.map((o) => ({
-      ...o,
-      items: JSON.parse(o.items),
-      shipping: JSON.parse(o.shipping),
-      payment: JSON.parse(o.payment),
-      coupon: o.coupon ? JSON.parse(o.coupon) : null,
-      rentalDetails: o.rentalDetails ? JSON.parse(o.rentalDetails) : null,
-      timeline: JSON.parse(o.timeline)
-    }));
-    res.json(result);
+    const orders = await Order.find({ userId: req.user.id }).sort({ createdAt: -1 }).lean();
+    res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -113,20 +86,8 @@ router.get('/', authMiddleware, async (req, res) => {
 
 router.get('/vendor', vendorOnly, async (req, res) => {
   try {
-    await getDb();
-    const allOrders = queryAll('SELECT * FROM orders ORDER BY date DESC', []);
-    const result = allOrders.filter((o) => {
-      const items = JSON.parse(o.items);
-      return items.some((item) => item.vendorId === req.user.id);
-    }).map((o) => ({
-      ...o,
-      items: JSON.parse(o.items),
-      shipping: JSON.parse(o.shipping),
-      payment: JSON.parse(o.payment),
-      coupon: o.coupon ? JSON.parse(o.coupon) : null,
-      rentalDetails: o.rentalDetails ? JSON.parse(o.rentalDetails) : null,
-      timeline: JSON.parse(o.timeline)
-    }));
+    const allOrders = await Order.find().sort({ createdAt: -1 }).lean();
+    const result = allOrders.filter((o) => o.items.some((item) => item.vendorId === req.user.id));
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -135,8 +96,7 @@ router.get('/vendor', vendorOnly, async (req, res) => {
 
 router.put('/:id/status', authMiddleware, async (req, res) => {
   try {
-    await getDb();
-    const order = queryOne('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -151,22 +111,11 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const timeline = JSON.parse(order.timeline || '[]');
-    timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+    order.status = status;
+    order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+    await order.save();
 
-    run('UPDATE orders SET status = ?, timeline = ? WHERE id = ?',
-      [status, JSON.stringify(timeline), req.params.id]);
-    saveDb();
-
-    const updated = queryOne('SELECT * FROM orders WHERE id = ?', [req.params.id]);
-    updated.items = JSON.parse(updated.items);
-    updated.shipping = JSON.parse(updated.shipping);
-    updated.payment = JSON.parse(updated.payment);
-    updated.coupon = updated.coupon ? JSON.parse(updated.coupon) : null;
-    updated.rentalDetails = updated.rentalDetails ? JSON.parse(updated.rentalDetails) : null;
-    updated.timeline = JSON.parse(updated.timeline);
-
-    res.json(updated);
+    res.json(order.toObject());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -174,8 +123,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 
 router.post('/:id/return', authMiddleware, async (req, res) => {
   try {
-    await getDb();
-    const order = queryOne('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -188,31 +136,18 @@ router.post('/:id/return', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Order already returned' });
     }
 
-    const items = JSON.parse(order.items);
-    for (const item of items) {
-      const inv = queryOne('SELECT id FROM inventory WHERE productId = ? AND size = ?', [item.productId, item.size]);
-      if (inv) {
-        run('UPDATE inventory SET stock = stock + ? WHERE id = ?', [item.quantity, inv.id]);
-      }
+    for (const item of order.items) {
+      await Product.updateOne(
+        { _id: item.productId, 'inventory.size': item.size },
+        { $inc: { 'inventory.$.stock': item.quantity } }
+      );
     }
 
-    const timeline = JSON.parse(order.timeline || '[]');
-    const now = new Date().toISOString();
-    timeline.push({ status: 'returned', date: now, description: 'Return processed, inventory restored' });
+    order.status = 'returned';
+    order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return processed, inventory restored' });
+    await order.save();
 
-    run('UPDATE orders SET status = ?, timeline = ? WHERE id = ?',
-      ['returned', JSON.stringify(timeline), req.params.id]);
-    saveDb();
-
-    const updated = queryOne('SELECT * FROM orders WHERE id = ?', [req.params.id]);
-    updated.items = JSON.parse(updated.items);
-    updated.shipping = JSON.parse(updated.shipping);
-    updated.payment = JSON.parse(updated.payment);
-    updated.coupon = updated.coupon ? JSON.parse(updated.coupon) : null;
-    updated.rentalDetails = updated.rentalDetails ? JSON.parse(updated.rentalDetails) : null;
-    updated.timeline = JSON.parse(updated.timeline);
-
-    res.json(updated);
+    res.json(order.toObject());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
