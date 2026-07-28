@@ -28,7 +28,7 @@ router.get('/vendor/:vendorId', authMiddleware, vendorOnly, async (req, res) => 
   }
 });
 
-router.post('/', vendorOnly, async (req, res) => {
+router.post('/', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const { title, subtitle, type, position, image, link, buttonText, startDate, endDate } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });

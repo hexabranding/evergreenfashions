@@ -112,6 +112,20 @@ export default function Checkout() {
     return payment.method.charAt(0).toUpperCase() + payment.method.slice(1);
   };
 
+  const useTestPayment = () => {
+    const methods = ["card", "upi", "paypal", "klarna"];
+    const method = methods[Math.floor(Math.random() * methods.length)];
+    setPayment({
+      method,
+      cardName: "Demo Customer",
+      cardNumber: "4242 4242 4242 4242",
+      expiry: "12/30",
+      cvv: "123",
+      upiId: "demo@upi",
+    });
+    setErrors({});
+  };
+
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-12 min-h-[70vh]">
       <button
@@ -211,6 +225,10 @@ export default function Checkout() {
                     </button>
                   ))}
                 </div>
+                <button onClick={useTestPayment} className="mb-6 border border-crimson text-crimson px-4 py-2 text-[10px] tracking-[0.18em] uppercase hover:bg-crimson hover:text-cream transition-colors">
+                  Use Random Test Payment
+                </button>
+                <p className="-mt-4 mb-6 text-[10px] text-muted-foreground">Demo only — no real payment is charged.</p>
 
                 {payment.method === "card" && (
                   <div className="grid sm:grid-cols-2 gap-5">

@@ -46,7 +46,7 @@ export default function ProductDetail() {
   }
 
   const isShoe = product.category === "Shoes";
-  const productImages = product.images || [product.img];
+  const productImages = product.images?.length ? product.images : (product.img ? [product.img] : []);
   const avgRating = getAverageRating(product.id);
   const reviews = getReviewsByProduct(product.id);
 
@@ -57,7 +57,7 @@ export default function ProductDetail() {
   const productWithSelection = {
     ...product,
     selectedSize,
-    selectedColor: selectedColor || product.colors[0],
+    selectedColor: selectedColor || product.colors?.[0] || "",
   };
 
   const rentalDays = rentalStart && rentalEnd
@@ -165,7 +165,7 @@ export default function ProductDetail() {
           )}
 
           {/* Colors */}
-          <div className="mb-6">
+          {product.colors?.length > 0 && <div className="mb-6">
             <div className="text-[11px] tracking-[0.2em] uppercase font-medium mb-3">
               Color — <span className="text-muted-foreground">{selectedColor || product.colors[0]}</span>
             </div>
@@ -177,7 +177,7 @@ export default function ProductDetail() {
                 />
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Sizes */}
           <div className="mb-4">
@@ -190,7 +190,7 @@ export default function ProductDetail() {
               </button>
             </div>
             <div className="flex gap-2 flex-wrap">
-              {product.sizes.map((s) => {
+              {(product.sizes || []).map((s) => {
                 const inStock = product.stock ? (product.stock[s] || 0) > 0 : true;
                 return (
                   <button key={s} onClick={() => inStock && setSelectedSize(s)}
@@ -300,7 +300,7 @@ export default function ProductDetail() {
             </div>
             {reviews.length > 0 ? (
               <div className="space-y-4">
-                {reviews.slice(0, 3).map((r) => (
+                {reviews.map((r) => (
                   <div key={r.id} className="border-b border-border pb-3">
                     <div className="flex items-center gap-2 mb-1">
                       {[...Array(5)].map((_, i) => <Star key={i} className={`w-2.5 h-2.5 ${i < r.rating ? "fill-crimson text-crimson" : ""}`} />)}

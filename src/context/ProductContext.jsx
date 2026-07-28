@@ -5,7 +5,8 @@ import { productsApi } from "@/api/products";
 const ProductContext = createContext();
 
 function normalizeProduct(product) {
-  return { ...product, id: product._id || product.id, stock: product.stock || Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) };
+  const images = Array.isArray(product.images) && product.images.length ? product.images : (product.img ? [product.img] : []);
+  return { ...product, id: product._id || product.id, images, img: product.img || images[0] || "", colors: Array.isArray(product.colors) ? product.colors : [], sizes: Array.isArray(product.sizes) ? product.sizes : [], stock: product.stock || Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) };
 }
 
 export function ProductProvider({ children }) {

@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useOrders } from "@/context/OrderContext";
 import { allProducts, parsePrice } from "@/data/products";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
+import OrderDetailPanel from "@/components/OrderDetailPanel";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import {
@@ -59,6 +60,8 @@ import {
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "orders", label: "Orders", icon: ShoppingCart },
+  { id: "rentalOrders", label: "Rental Orders", icon: Repeat },
   { id: "users", label: "Users", icon: Users },
   { id: "vendors", label: "Vendors", icon: Store },
   { id: "products", label: "All Products", icon: Package },
@@ -278,11 +281,23 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, confirmLabel 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { currentUser: user, users: authUsers, isAuthenticated } = useAuth();
-  const { orders, vendors: authVendors, updateOrderStatus } = useOrders();
+  const { orders: contextOrders, vendors: authVendors, updateOrderStatus, adminApiOrders, adminOrdersLoading, fetchAdminOrders, updateOrderStatusApi } = useOrders();
 
   const [users, setUsers] = useState(authUsers || []);
   const [vendors, setVendors] = useState(authVendors || []);
   const [products, setProducts] = useState([]);
+
+  const orders = useMemo(() => {
+    const merged = [...contextOrders];
+    const seen = new Set(contextOrders.map((o) => o.id));
+    for (const o of adminApiOrders) {
+      if (!seen.has(o.id)) {
+        merged.push(o);
+        seen.add(o.id);
+      }
+    }
+    return merged;
+  }, [contextOrders, adminApiOrders]);
 
   const [activeTab, setActiveTab] = useState("dashboard");
   const [accessDenied, setAccessDenied] = useState(false);
@@ -295,6 +310,10 @@ export default function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({
+    firstName: "", lastName: "", email: "", password: "",
+  });
   const [vendorSearch, setVendorSearch] = useState("");
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [newVendorForm, setNewVendorForm] = useState({
@@ -332,6 +351,10 @@ export default function AdminDashboard() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [previewProduct, setPreviewProduct] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null, confirmLabel: "Confirm" });
+  const [expandedAdminOrder, setExpandedAdminOrder] = useState(null);
+  const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState("All");
+  const [expandedAdminRentalOrder, setExpandedAdminRentalOrder] = useState(null);
+  const [adminRentalOrderStatusFilter, setAdminRentalOrderStatusFilter] = useState("All");
 
   useEffect(() => {
     setUsers(authUsers || []);
@@ -347,6 +370,10 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     productsApi.getAll().then((data) => setProducts(data.map((product) => ({ ...product, id: product._id })))).catch(() => setProducts([]));
+  }, []);
+
+  useEffect(() => {
+    fetchAdminOrders();
   }, []);
 
   useEffect(() => {
@@ -586,6 +613,52 @@ export default function AdminDashboard() {
       }]);
       setNewVendorForm({ firstName: "", lastName: "", email: "", password: "" });
       setShowAddVendor(false);
+    } catch {
+      alert("Failed to connect to server");
+    }
+  };
+
+  const handleAddUser = async () => {
+    const { firstName, lastName, email, password } = newUserForm;
+    if (!firstName || !lastName || !email || !password) return;
+
+    try {
+      const token = localStorage.getItem("evergreen_token");
+      const res = await fetch("http://localhost:5000/api/auth/register-vendor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ firstName, lastName, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to create vendor"); return; }
+
+      const newUser = {
+        id: data._id,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        role: "vendor",
+        phone: null,
+        createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        addresses: [],
+      };
+
+      setVendors((prev) => [...prev, {
+        ...newUser,
+        storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
+        description: data.vendorStore?.description || "",
+        commission: data.vendorStore?.commission || 15,
+        suspended: false,
+        totalProducts: 0,
+        totalSales: 0,
+        totalEarnings: 0,
+        pendingPayout: 0,
+        joinedAt: newUser.createdAt,
+      }]);
+
+      setUsers((prev) => [...prev, newUser]);
+      setNewUserForm({ firstName: "", lastName: "", email: "", password: "" });
+      setShowAddUser(false);
     } catch {
       alert("Failed to connect to server");
     }
@@ -833,7 +906,55 @@ export default function AdminDashboard() {
             <option key={r} value={r}>{r === "All" ? "All Roles" : r.charAt(0).toUpperCase() + r.slice(1)}</option>
           ))}
         </select>
+        <button
+          onClick={() => setShowAddUser(!showAddUser)}
+          className="btn-ink px-5 py-3 text-xs tracking-widest uppercase flex items-center gap-2"
+        >
+          <Plus size={14} />
+          {showAddUser ? "Close" : "Add Vendor"}
+        </button>
       </div>
+
+      <AnimatePresence>
+        {showAddUser && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-cream border border-border overflow-hidden"
+          >
+            <div className="p-6 space-y-4">
+              <p className="eyebrow">Add New Vendor</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">First Name</label>
+                  <input type="text" value={newUserForm.firstName} onChange={(e) => setNewUserForm((p) => ({ ...p, firstName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Last Name</label>
+                  <input type="text" value={newUserForm.lastName} onChange={(e) => setNewUserForm((p) => ({ ...p, lastName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Email</label>
+                  <input type="email" value={newUserForm.email} onChange={(e) => setNewUserForm((p) => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Password</label>
+                  <input type="password" value={newUserForm.password} onChange={(e) => setNewUserForm((p) => ({ ...p, password: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleAddUser} disabled={!newUserForm.firstName || !newUserForm.lastName || !newUserForm.email || !newUserForm.password} className="btn-ink px-6 py-2.5 text-xs tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  Create Vendor
+                </button>
+                <button onClick={() => setShowAddUser(false)} className="px-6 py-2.5 text-xs tracking-widest uppercase border border-border text-foreground hover:bg-secondary transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="bg-cream border border-border overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
@@ -2308,9 +2429,348 @@ export default function AdminDashboard() {
     );
   };
 
+  const renderOrders = () => {
+    const orderStatusFilter = adminOrderStatusFilter;
+    const filteredAdminOrders = orders.filter((o) => {
+      const matchesSearch =
+        (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
+        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
+      const matchesStatus = orderStatusFilter === "All" || o.status === orderStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+    const sortedAdminOrders = [...filteredAdminOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    const orderStatusCounts = {
+      All: orders.length,
+      confirmed: orders.filter((o) => o.status === "confirmed").length,
+      preparing: orders.filter((o) => o.status === "preparing").length,
+      shipped: orders.filter((o) => o.status === "shipped").length,
+      delivered: orders.filter((o) => o.status === "delivered").length,
+      cancelled: orders.filter((o) => o.status === "cancelled").length,
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={ShoppingCart} label="Total Orders" value={orders.length} index={0} />
+          <StatCard icon={Clock} label="Pending" value={orderStatusCounts.confirmed + orderStatusCounts.preparing} index={1} />
+          <StatCard icon={Package} label="Shipped" value={orderStatusCounts.shipped} index={2} />
+          <StatCard icon={CheckCircle} label="Delivered" value={orderStatusCounts.delivered} index={3} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search orders by ID or customer name..."
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
+            />
+          </div>
+          <select
+            value={adminOrderStatusFilter}
+            onChange={(e) => setAdminOrderStatusFilter(e.target.value)}
+            className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
+          >
+            {Object.keys(orderStatusCounts).map((s) => (
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+
+        {adminOrdersLoading && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">Loading orders from server...</p>
+          </div>
+        )}
+
+        <div className="bg-cream border border-border overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
+            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-2">Items</div>
+            <div className="col-span-2">Date</div>
+            <div className="col-span-1">Total</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-2">Actions</div>
+          </div>
+          <div className="divide-y divide-border">
+            <AnimatePresence>
+              {sortedAdminOrders.map((order, i) => {
+                const isExpanded = expandedAdminOrder === order.id;
+                return (
+                  <motion.div
+                    key={order.id}
+                    variants={fadeUp}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <div
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
+                      onClick={() => setExpandedAdminOrder(isExpanded ? null : order.id)}
+                    >
+                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">
+                        {new Date(order.date || order.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
+                      <div className="md:col-span-1"><StatusBadge status={order.status} /></div>
+                      <div className="md:col-span-2 flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedAdminOrder(isExpanded ? null : order.id); }}
+                          className="p-2 hover:bg-ink/5 rounded transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-4">
+                            <OrderDetailPanel order={order} showCustomer={true} />
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border">
+                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                                <button
+                                  key={status}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateOrderStatusApi(order.id, status);
+                                    setExpandedAdminOrder(null);
+                                  }}
+                                  disabled={order.status === status}
+                                  className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                    order.status === status
+                                      ? "bg-ink/10 text-ink border border-ink/30"
+                                      : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                >
+                                  {status}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+            {sortedAdminOrders.length === 0 && (
+              <div className="px-6 py-12">
+                <EmptyState icon={ShoppingCart} title="No orders found" description="No orders match your search criteria." />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRentalOrders = () => {
+    const rentalOrders = orders.filter((o) => o.rentalDetails);
+    const filteredRentalOrders = rentalOrders.filter((o) => {
+      const matchesSearch =
+        (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
+        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
+      const matchesStatus = adminRentalOrderStatusFilter === "All" || o.status === adminRentalOrderStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+    const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    const rentalStatusCounts = {
+      All: rentalOrders.length,
+      confirmed: rentalOrders.filter((o) => o.status === "confirmed").length,
+      preparing: rentalOrders.filter((o) => o.status === "preparing").length,
+      shipped: rentalOrders.filter((o) => o.status === "shipped").length,
+      delivered: rentalOrders.filter((o) => o.status === "delivered").length,
+      cancelled: rentalOrders.filter((o) => o.status === "cancelled").length,
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={Repeat} label="Total Rental Orders" value={rentalOrders.length} index={0} />
+          <StatCard icon={Clock} label="Pending" value={rentalStatusCounts.confirmed + rentalStatusCounts.preparing} index={1} />
+          <StatCard icon={Package} label="Shipped" value={rentalStatusCounts.shipped} index={2} />
+          <StatCard icon={CheckCircle} label="Delivered" value={rentalStatusCounts.delivered} index={3} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search rental orders by ID or customer name..."
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
+            />
+          </div>
+          <select
+            value={adminRentalOrderStatusFilter}
+            onChange={(e) => setAdminRentalOrderStatusFilter(e.target.value)}
+            className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
+          >
+            {Object.keys(rentalStatusCounts).map((s) => (
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+
+        {adminOrdersLoading && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">Loading rental orders from server...</p>
+          </div>
+        )}
+
+        <div className="bg-cream border border-border overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
+            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-2">Items</div>
+            <div className="col-span-2">Rental Period</div>
+            <div className="col-span-1">Total</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-2">Actions</div>
+          </div>
+          <div className="divide-y divide-border">
+            <AnimatePresence>
+              {sortedRentalOrders.map((order, i) => {
+                const isExpanded = expandedAdminRentalOrder === order.id;
+                return (
+                  <motion.div
+                    key={order.id}
+                    variants={fadeUp}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <div
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
+                      onClick={() => setExpandedAdminRentalOrder(isExpanded ? null : order.id)}
+                    >
+                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">
+                        {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
+                        {order.rentalDetails?.endDate ? new Date(order.rentalDetails.endDate).toLocaleDateString() : "-"}
+                        {order.rentalDetails?.rentalDays ? ` (${order.rentalDetails.rentalDays}d)` : ""}
+                      </div>
+                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
+                      <div className="md:col-span-1"><StatusBadge status={order.status} /></div>
+                      <div className="md:col-span-2 flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedAdminRentalOrder(isExpanded ? null : order.id); }}
+                          className="p-2 hover:bg-ink/5 rounded transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-4">
+                            {order.rentalDetails && (
+                              <div className="bg-background rounded-sm p-4 mb-4 border border-border">
+                                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Rental Details</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                  {order.rentalDetails.startDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Start Date</p>
+                                      <p className="text-foreground">{new Date(order.rentalDetails.startDate).toLocaleDateString()}</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.endDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">End Date</p>
+                                      <p className="text-foreground">{new Date(order.rentalDetails.endDate).toLocaleDateString()}</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.rentalDays && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Rental Days</p>
+                                      <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.pricePerDay && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Price Per Day</p>
+                                      <p className="text-foreground">${order.rentalDetails.pricePerDay}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <OrderDetailPanel order={order} showCustomer={true} />
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border">
+                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                                <button
+                                  key={status}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateOrderStatusApi(order.id, status);
+                                    setExpandedAdminRentalOrder(null);
+                                  }}
+                                  disabled={order.status === status}
+                                  className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                    order.status === status
+                                      ? "bg-ink/10 text-ink border border-ink/30"
+                                      : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                >
+                                  {status}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+            {sortedRentalOrders.length === 0 && (
+              <div className="px-6 py-12">
+                <EmptyState icon={Repeat} title="No rental orders found" description="No rental orders match your search criteria." />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard": return renderDashboard();
+      case "orders": return renderOrders();
+      case "rentalOrders": return renderRentalOrders();
       case "users": return renderUsers();
       case "vendors": return renderVendors();
       case "products": return renderProducts();

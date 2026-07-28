@@ -5,6 +5,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
+import OrderDetailPanel from "@/components/OrderDetailPanel";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import { authApi } from "@/api/auth";
@@ -307,6 +308,10 @@ export default function VendorDashboard() {
     reviews,
     getReviewsByProduct,
     replyToReview,
+    vendorApiOrders,
+    vendorOrdersLoading,
+    fetchVendorOrders,
+    updateOrderStatusApi,
   } = useOrders();
   const navigate = useNavigate();
 
@@ -323,7 +328,6 @@ export default function VendorDashboard() {
   const [withdrawalMethod, setWithdrawalMethod] = useState("bank");
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
   const [withdrawals, setWithdrawals] = useState(MOCK_WITHDRAWALS);
-  const [rentalOrders, setRentalOrders] = useState(MOCK_RENTAL_ORDERS);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -348,10 +352,14 @@ export default function VendorDashboard() {
   const [editingProduct, setEditingProduct] = useState(null);
 
   const [localInventory, setLocalInventory] = useState({});
+  const [expandedOrder, setExpandedOrder] = useState(null);
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    adsApi.getForVendor(currentUser.id).then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id })))).catch(() => setVendorAds([]));
+    // Admin and vendor campaigns use one shared advertising feed.
+    adsApi.getAll().then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id || ad.id })))).catch(() => setVendorAds([]));
+    // Fetch vendor orders from backend API
+    fetchVendorOrders();
   }, [currentUser?.id]);
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -414,7 +422,19 @@ export default function VendorDashboard() {
 
   const vendorProducts = vendorProductsList;
 
-  const vendorOrders = getOrdersByVendor(vendor.id);
+  const localVendorOrders = getOrdersByVendor(vendor.id);
+  const vendorOrders = useMemo(() => {
+    const allIds = new Set(localVendorOrders.map((o) => o.id));
+    const merged = [...localVendorOrders];
+    for (const o of vendorApiOrders) {
+      if (!allIds.has(o.id)) {
+        merged.push(o);
+        allIds.add(o.id);
+      }
+    }
+    return merged;
+  }, [localVendorOrders, vendorApiOrders]);
+  const rentalOrders = useMemo(() => vendorOrders.filter((o) => o.rentalDetails), [vendorOrders]);
   const recentOrders = [...vendorOrders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
   const filteredOrders = orderFilter === "all"
     ? vendorOrders
@@ -494,18 +514,16 @@ export default function VendorDashboard() {
   const handleNextStatus = (orderId, currentStatus) => {
     const idx = ORDER_STATUS_FLOW.indexOf(currentStatus);
     if (idx >= 0 && idx < ORDER_STATUS_FLOW.length - 1) {
-      updateOrderStatus(orderId, ORDER_STATUS_FLOW[idx + 1]);
+      const nextStatus = ORDER_STATUS_FLOW[idx + 1];
+      updateOrderStatusApi(orderId, nextStatus);
     }
   };
 
   const handleNextRentalStatus = (orderId, currentStatus) => {
     const idx = RENTAL_STATUS_FLOW.indexOf(currentStatus);
     if (idx >= 0 && idx < RENTAL_STATUS_FLOW.length - 1) {
-      setRentalOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId ? { ...o, status: RENTAL_STATUS_FLOW[idx + 1] } : o
-        )
-      );
+      const nextStatus = RENTAL_STATUS_FLOW[idx + 1];
+      updateOrderStatusApi(orderId, nextStatus);
     }
   };
 
@@ -958,7 +976,7 @@ export default function VendorDashboard() {
           {rentalProducts.map((product) => {
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
-            const rentalCount = MOCK_RENTAL_ORDERS.filter(
+            const rentalCount = rentalOrders.filter(
               (ro) => ro.items.some((i) => i.name === product.name) && ro.status === "active"
             ).length;
             const stats = deterministicProductStats(product.id);
@@ -1193,6 +1211,12 @@ export default function VendorDashboard() {
         </div>
       </div>
 
+      {vendorOrdersLoading && (
+        <div className="text-center py-4">
+          <p className="text-sm text-muted-foreground">Loading orders from server...</p>
+        </div>
+      )}
+
       {sortedFilteredOrders.length === 0 ? (
         <EmptyState
           icon={ShoppingBag}
@@ -1204,6 +1228,7 @@ export default function VendorDashboard() {
           {sortedFilteredOrders.map((order) => {
             const nextStatus =
               ORDER_STATUS_FLOW[ORDER_STATUS_FLOW.indexOf(order.status) + 1] || null;
+            const isExpanded = expandedOrder === order.id;
 
             return (
               <motion.div
@@ -1212,18 +1237,22 @@ export default function VendorDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-secondary border border-border/60 rounded-sm p-5"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div
+                  className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer"
+                  onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                >
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="font-medium text-foreground text-sm">{order.id}</span>
                       <StatusBadge status={order.status} />
                       <span className="text-xs text-muted-foreground">
-                        {new Date(order.date).toLocaleDateString("en-GB", {
+                        {new Date(order.date || order.createdAt).toLocaleDateString("en-GB", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",
                         })}
                       </span>
+                      {isExpanded ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
                     </div>
                     {order.shipping && (
                       <p className="text-xs text-muted-foreground">
@@ -1237,8 +1266,8 @@ export default function VendorDashboard() {
                           key={idx}
                           className="text-xs bg-cream px-2.5 py-1 rounded-sm text-ink"
                         >
-                          {item.name} × {item.qty}
-                          {item.selectedSize ? ` (${item.selectedSize})` : ""}
+                          {item.name} x {item.qty || item.quantity}
+                          {item.selectedSize || item.size ? ` (${item.selectedSize || item.size})` : ""}
                         </span>
                       ))}
                     </div>
@@ -1248,7 +1277,10 @@ export default function VendorDashboard() {
                     <p className="text-display text-xl">{parsePrice(order.total)}</p>
                     {nextStatus && (
                       <button
-                        onClick={() => handleNextStatus(order.id, order.status)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNextStatus(order.id, order.status);
+                        }}
                         className="btn-ink px-4 py-2 text-xs tracking-widest uppercase whitespace-nowrap"
                       >
                         Mark as {nextStatus}
@@ -1256,6 +1288,20 @@ export default function VendorDashboard() {
                     )}
                   </div>
                 </div>
+
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <OrderDetailPanel order={order} showCustomer={true} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             );
           })}
@@ -1958,7 +2004,7 @@ export default function VendorDashboard() {
         <input value={adForm.buttonText} onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))} placeholder="Button text" className="px-4 py-3 bg-background border border-border text-sm" />
         <input value={adForm.link} onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))} placeholder="/collection" className="px-4 py-3 bg-background border border-border text-sm" />
       </div>{adForm.image && <img src={adForm.image} alt="Advertisement preview" className="h-36 w-56 object-cover border border-border" />}<div className="flex gap-3"><button onClick={submitAd} disabled={!adForm.title.trim() || !adForm.image} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40">Create Ad</button><button onClick={() => setShowAdForm(false)} className="px-5 py-2.5 border border-border text-xs uppercase tracking-widest">Cancel</button></div></div>}
-      <div className="grid gap-4">{vendorAds.map((ad) => <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p></div><div className="flex gap-2"><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div></div>)}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
+      <div className="grid gap-4">{vendorAds.map((ad) => { const ownedByVendor = ad.vendorId === currentUser.id; return <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p><p className="text-[10px] uppercase tracking-wider mt-2 text-muted-foreground">{ownedByVendor ? "Your campaign" : "Admin campaign"}</p></div>{ownedByVendor && <div className="flex gap-2"><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div>}</div>; })}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
     </div>
   );
 

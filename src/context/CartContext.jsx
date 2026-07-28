@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { useOrders } from "@/context/OrderContext";
 import { useAuth } from "@/context/AuthContext";
+import { ordersApi } from "@/api/orders";
 
 const CartContext = createContext();
 
@@ -21,6 +22,27 @@ function loadState(key, fallback) {
   }
 }
 
+function isInlineImage(value) {
+  return typeof value === "string" && value.startsWith("data:");
+}
+
+function saveState(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // Large uploaded images must never make the cart provider crash.
+    console.warn(`Could not persist ${key} locally.`, error);
+  }
+}
+
+function compactProduct(product) {
+  return {
+    ...product,
+    img: isInlineImage(product.img) ? "" : product.img,
+    images: (product.images || []).filter((image) => !isInlineImage(image)),
+  };
+}
+
 function getItemPrice(item) {
   if (item.isRental && item.rentalDetails) {
     return item.rentalDetails.rentalPricePerDay * item.rentalDetails.rentalDays;
@@ -29,8 +51,8 @@ function getItemPrice(item) {
 }
 
 export function CartProvider({ children }) {
-  const { updateStock } = useOrders();
-  const { isAuthenticated, requestPhoneLogin } = useAuth();
+  const { placeOrder: createSharedOrder } = useOrders();
+  const { isAuthenticated, requestPhoneLogin, currentUser } = useAuth();
   const [cartItems, setCartItems] = useState(() => loadState("ef_cart", []));
   const [wishlist, setWishlist] = useState(() => loadState("ef_wishlist", []));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -40,15 +62,17 @@ export function CartProvider({ children }) {
   const [couponError, setCouponError] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("ef_cart", JSON.stringify(cartItems));
+    // Uploaded product images are base64 strings and can exceed localStorage's
+    // small quota. The live cart retains them; saved cart data stays compact.
+    saveState("ef_cart", cartItems.map(compactProduct));
   }, [cartItems]);
 
   useEffect(() => {
-    localStorage.setItem("ef_wishlist", JSON.stringify(wishlist));
+    saveState("ef_wishlist", wishlist.map(compactProduct));
   }, [wishlist]);
 
   useEffect(() => {
-    if (coupon) localStorage.setItem("ef_coupon", JSON.stringify(coupon));
+    if (coupon) saveState("ef_coupon", coupon);
     else localStorage.removeItem("ef_coupon");
   }, [coupon]);
 
@@ -135,42 +159,39 @@ export function CartProvider({ children }) {
 
   const placeOrder = useCallback(
     (shippingInfo, paymentMethod) => {
-      const newOrder = {
-        id: `EF-${Date.now().toString(36).toUpperCase()}`,
-        items: [...cartItems],
-        total: cartTotal,
-        coupon: coupon ? coupon.code : null,
-        discount,
-        shipping: shippingInfo,
-        payment: paymentMethod,
-        status: "confirmed",
-        date: new Date().toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }),
-        estimatedDelivery: new Date(
-          Date.now() + 7 * 24 * 60 * 60 * 1000
-        ).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }),
-      };
+      const newOrder = createSharedOrder(
+        cartItems,
+        shippingInfo,
+        paymentMethod,
+        currentUser?.id || "guest",
+        coupon?.code,
+        discount
+      );
 
-      cartItems.forEach((item) => {
-        if (item.selectedSize && item.qty > 0) {
-          const productId = item.id || item.slug || item.name;
-          updateStock(productId, item.selectedSize, item.qty);
-        }
-      });
+      // Also save to backend MongoDB
+      try {
+        const backendItems = cartItems.map((item) => ({
+          productId: item.id || item.slug || item.name,
+          quantity: item.qty,
+          size: item.selectedSize || null,
+          color: item.selectedColor || null,
+        }));
+        ordersApi.create({
+          items: backendItems,
+          coupon: coupon || null,
+          shipping: shippingInfo,
+          payment: paymentMethod,
+        }).catch(() => {});
+      } catch {
+        // Backend might be unreachable; local order is still saved
+      }
 
       setOrder(newOrder);
       setCartItems([]);
       setCoupon(null);
       return newOrder;
     },
-    [cartItems, cartTotal, coupon, discount, updateStock]
+    [cartItems, coupon, discount, createSharedOrder, currentUser?.id]
   );
 
   const toggleWishlist = useCallback((product) => {

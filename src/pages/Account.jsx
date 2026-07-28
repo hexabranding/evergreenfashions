@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -12,6 +12,7 @@ import {
   Trash2,
   Check,
   Star,
+  Calendar,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
@@ -21,6 +22,7 @@ import { parsePrice } from "@/data/products";
 const tabs = [
   { id: "profile", label: "Profile", icon: User },
   { id: "orders", label: "Orders", icon: Package },
+  { id: "rentals", label: "Rental Orders", icon: Calendar },
   { id: "addresses", label: "Addresses", icon: MapPin },
   { id: "wishlist", label: "Wishlist", icon: Heart },
 ];
@@ -31,6 +33,7 @@ const statusColors = {
   shipped: "bg-purple-100 text-purple-700",
   delivered: "bg-emerald-100 text-emerald-700",
   returned: "bg-red-100 text-red-700",
+  cancelled: "bg-gray-100 text-gray-700",
 };
 
 const statusSteps = ["confirmed", "preparing", "shipped", "delivered"];
@@ -54,7 +57,7 @@ const listItem = {
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
   const { wishlist, toggleWishlist, addToCart } = useCart();
-  const { getOrdersByUser } = useOrders();
+  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi } = useOrders();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("profile");
@@ -66,6 +69,8 @@ export default function Account() {
     phone: "",
   });
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [cancelOrderId, setCancelOrderId] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
   const [addressForm, setAddressForm] = useState({
@@ -92,9 +97,32 @@ export default function Account() {
     }
   }, [user]);
 
-  if (!user) return null;
+  useEffect(() => {
+    if (user) {
+      fetchCustomerOrders();
+      const interval = setInterval(() => fetchCustomerOrders(), 15000);
+      return () => clearInterval(interval);
+    }
+  }, [user, fetchCustomerOrders]);
 
-  const orders = getOrdersByUser(user.id);
+  const orders = useMemo(() => {
+    const localOrders = getOrdersByUser(user?.id) || [];
+    const apiOrders = (customerApiOrders || []).filter((o) => {
+      const uid = o.userId || o.user;
+      return uid === user?.id;
+    });
+    const byId = {};
+    [...localOrders, ...apiOrders].forEach((o) => {
+      const key = o.id || o._id;
+      if (key && !byId[key]) byId[key] = o;
+    });
+    return Object.values(byId).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [getOrdersByUser, customerApiOrders, user]);
+
+  const rentalOrders = useMemo(() => orders.filter((o) => o.rentalDetails), [orders]);
+  const normalOrders = useMemo(() => orders.filter((o) => !o.rentalDetails), [orders]);
+
+  if (!user) return null;
 
   const handleProfileSave = () => {
     updateProfile(profileForm);
@@ -283,7 +311,7 @@ export default function Account() {
             <motion.div key="orders" {...fadeSlide}>
               <h2 className="font-serif text-2xl text-foreground mb-6">Order History</h2>
 
-              {orders.length === 0 ? (
+              {normalOrders.length === 0 ? (
                 <div className="bg-secondary rounded-sm p-10 text-center">
                   <Package size={40} className="mx-auto text-muted-foreground mb-3" />
                   <p className="text-muted-foreground mb-4">No orders yet</p>
@@ -293,7 +321,7 @@ export default function Account() {
                 </div>
               ) : (
                 <motion.div variants={listStagger} initial="initial" animate="animate" className="space-y-4">
-                  {orders.map((order) => {
+                  {normalOrders.map((order) => {
                     const isExpanded = expandedOrder === order.id;
                     const currentStep = statusSteps.indexOf(order.status);
                     return (
@@ -388,7 +416,7 @@ export default function Account() {
                                       <div className="flex-1 min-w-0">
                                         <p className="text-sm text-foreground truncate">{item.name}</p>
                                         <p className="text-xs text-muted-foreground">
-                                          Qty: {item.quantity} &middot; {parsePrice(item.price)}
+                                          Qty: {item.quantity}{(item.selectedSize || item.size) && ` · Size: ${item.selectedSize || item.size}`}{(item.selectedColor || item.color) && ` · ${item.selectedColor || item.color}`} · {parsePrice(item.price)}
                                         </p>
                                       </div>
                                     </div>
@@ -399,11 +427,203 @@ export default function Account() {
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
                                   </p>
-                                  {order.status === "delivered" && (
-                                    <button className="text-xs text-crimson hover:text-crimson/80 transition-colors underline">
-                                      Request Return
-                                    </button>
-                                  )}
+                                  <div className="flex items-center gap-3">
+                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setCancelOrderId(order.id); setCancelReason(""); }}
+                                        className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
+                                      >
+                                        Cancel Delivery
+                                      </button>
+                                    )}
+                                    {order.status === "delivered" && (
+                                      <button className="text-xs text-crimson hover:text-crimson/80 transition-colors underline">
+                                        Request Return
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Rental Orders Tab */}
+          {activeTab === "rentals" && (
+            <motion.div key="rentals" {...fadeSlide}>
+              <h2 className="font-serif text-2xl text-foreground mb-6">Rental Orders</h2>
+
+              {rentalOrders.length === 0 ? (
+                <div className="bg-secondary rounded-sm p-10 text-center">
+                  <Calendar size={40} className="mx-auto text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground mb-4">No rental orders yet</p>
+                  <Link to="/rentals" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
+                    Browse Rentals
+                  </Link>
+                </div>
+              ) : (
+                <motion.div variants={listStagger} initial="initial" animate="animate" className="space-y-4">
+                  {rentalOrders.map((order) => {
+                    const isExpanded = expandedOrder === order.id;
+                    const currentStep = statusSteps.indexOf(order.status);
+                    return (
+                      <motion.div
+                        key={order.id}
+                        variants={listItem}
+                        className="bg-secondary rounded-sm overflow-hidden"
+                      >
+                        <button
+                          onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                          className="w-full p-5 flex flex-col sm:flex-row sm:items-center gap-3 text-left hover:bg-secondary/80 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-1">
+                              <span className="text-sm font-medium text-foreground">
+                                Rental #{order.id}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusColors[order.status] || "bg-gray-100 text-gray-600"}`}>
+                                {order.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(order.date).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <p className="text-sm text-foreground font-medium">
+                              {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {parsePrice(order.total)}
+                            </p>
+                          </div>
+                        </button>
+
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.3 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="px-5 pb-5 border-t border-border pt-4">
+                                {/* Rental Details */}
+                                {order.rentalDetails && (
+                                  <div className="bg-background rounded-sm p-4 mb-4">
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Rental Details</p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                      {order.rentalDetails.startDate && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Start Date</p>
+                                          <p className="text-foreground">{new Date(order.rentalDetails.startDate).toLocaleDateString()}</p>
+                                        </div>
+                                      )}
+                                      {order.rentalDetails.endDate && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">End Date</p>
+                                          <p className="text-foreground">{new Date(order.rentalDetails.endDate).toLocaleDateString()}</p>
+                                        </div>
+                                      )}
+                                      {order.rentalDetails.rentalDays && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Rental Days</p>
+                                          <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
+                                        </div>
+                                      )}
+                                      {order.rentalDetails.pricePerDay && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Price Per Day</p>
+                                          <p className="text-foreground">{parsePrice(order.rentalDetails.pricePerDay)}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Status Timeline */}
+                                <div className="flex items-center gap-0 mb-6">
+                                  {statusSteps.map((step, i) => (
+                                    <div key={step} className="flex-1 flex items-center">
+                                      <div className="flex flex-col items-center flex-shrink-0">
+                                        <div
+                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                                            i <= currentStep
+                                              ? "bg-ink text-cream"
+                                              : "bg-border text-muted-foreground"
+                                          }`}
+                                        >
+                                          {i <= currentStep ? <Check size={12} /> : i + 1}
+                                        </div>
+                                        <span className="text-[10px] mt-1 capitalize text-muted-foreground hidden sm:block">
+                                          {step}
+                                        </span>
+                                      </div>
+                                      {i < statusSteps.length - 1 && (
+                                        <div
+                                          className={`flex-1 h-px mx-1 ${
+                                            i < currentStep ? "bg-ink" : "bg-border"
+                                          }`}
+                                        />
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Order Items */}
+                                <div className="space-y-3 mb-4">
+                                  {order.items.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-3">
+                                      <div className="w-12 h-14 bg-background rounded-sm overflow-hidden flex-shrink-0">
+                                        {item.image && (
+                                          <img
+                                            src={item.image}
+                                            alt={item.name}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-foreground truncate">{item.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Qty: {item.quantity}{(item.selectedSize || item.size) && ` · Size: ${item.selectedSize || item.size}`}{(item.selectedColor || item.color) && ` · ${item.selectedColor || item.color}`} · {parsePrice(item.price)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="flex items-center justify-between pt-3 border-t border-border">
+                                  <p className="text-sm font-medium text-foreground">
+                                    Total: {parsePrice(order.total)}
+                                  </p>
+                                  <div className="flex items-center gap-3">
+                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setCancelOrderId(order.id); setCancelReason(""); }}
+                                        className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
+                                      >
+                                        Cancel Delivery
+                                      </button>
+                                    )}
+                                    {order.status === "delivered" && (
+                                      <button className="text-xs text-crimson hover:text-crimson/80 transition-colors underline">
+                                        Request Return
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </motion.div>
@@ -670,6 +890,59 @@ export default function Account() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Cancel Order Modal */}
+      <AnimatePresence>
+        {cancelOrderId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4"
+            onClick={() => setCancelOrderId(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-background border border-border w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 space-y-4">
+                <h3 className="font-serif text-lg text-foreground">Cancel Delivery</h3>
+                <p className="text-sm text-muted-foreground">
+                  Please provide a reason for cancelling this order. This helps us improve our service.
+                </p>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Reason for cancellation..."
+                  rows={3}
+                  className="w-full bg-secondary border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors resize-none"
+                />
+              </div>
+              <div className="flex border-t border-border">
+                <button
+                  onClick={() => setCancelOrderId(null)}
+                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors"
+                >
+                  Keep Order
+                </button>
+                <button
+                  onClick={() => {
+                    cancelOrderApi(cancelOrderId, cancelReason);
+                    setCancelOrderId(null);
+                    setCancelReason("");
+                  }}
+                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-crimson hover:bg-crimson/5 transition-colors border-l border-border"
+                >
+                  Confirm Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

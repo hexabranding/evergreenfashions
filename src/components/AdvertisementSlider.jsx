@@ -14,11 +14,11 @@ export default function AdvertisementSlider() {
     return ads.filter((ad) => (!ad.startDate || ad.startDate <= today) && (!ad.endDate || ad.endDate >= today));
   }, [ads]);
   const slides = visibleAds;
+  useEffect(() => { setActiveIndex(0); }, [slides.length]);
+  useEffect(() => { if (slides.length < 2) return undefined; const timer = window.setInterval(() => setActiveIndex((index) => (index + 1) % slides.length), 5500); return () => window.clearInterval(timer); }, [slides.length]);
   if (!isLoading && slides.length === 0) return null;
   if (slides.length === 0) return null;
   const current = slides[activeIndex % slides.length];
-  useEffect(() => { setActiveIndex(0); }, [slides.length]);
-  useEffect(() => { if (slides.length < 2) return undefined; const timer = window.setInterval(() => setActiveIndex((index) => (index + 1) % slides.length), 5500); return () => window.clearInterval(timer); }, [slides.length]);
   const changeSlide = (direction) => setActiveIndex((index) => (index + direction + slides.length) % slides.length);
 
   return <section className="relative w-full overflow-hidden" aria-label="Featured advertisements">

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
-import { authMiddleware, vendorOnly } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, vendorOnly } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -84,10 +84,29 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/vendor', vendorOnly, async (req, res) => {
+router.get('/admin', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ createdAt: -1 }).lean();
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/vendor', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const allOrders = await Order.find().sort({ createdAt: -1 }).lean();
-    const result = allOrders.filter((o) => o.items.some((item) => item.vendorId === req.user.id));
+    const vendorProducts = await Product.find({
+      $or: [{ vendorId: req.user.id }, { vendorId: 'ef-main' }]
+    }).select('_id').lean();
+    const vendorProductIds = new Set(vendorProducts.map((p) => p._id));
+    const result = allOrders.filter((o) =>
+      o.items.some((item) =>
+        item.vendorId === req.user.id ||
+        item.vendorId === 'ef-main' ||
+        vendorProductIds.has(item.productId)
+      )
+    );
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -105,14 +124,47 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    if (req.user.role === 'vendor') {
+      const ownsItems = order.items.some((item) => item.vendorId === req.user.id || item.vendorId === 'ef-main');
+      if (!ownsItems) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+    }
+
     const { status } = req.body;
-    const validStatuses = ['confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
+    const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
     order.status = status;
     order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+    await order.save();
+
+    res.json(order.toObject());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/cancel', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (order.status === 'cancelled' || order.status === 'delivered' || order.status === 'returned') {
+      return res.status(400).json({ error: 'Order cannot be cancelled' });
+    }
+
+    const { reason } = req.body;
+    order.status = 'cancelled';
+    order.timeline.push({ status: 'cancelled', date: new Date().toISOString(), description: reason || 'Order cancelled by customer' });
     await order.save();
 
     res.json(order.toObject());

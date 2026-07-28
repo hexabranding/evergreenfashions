@@ -7,6 +7,14 @@ import { parsePrice } from "@/data/products";
 export default function Confirmation() {
   const { order } = useCart();
 
+  const paymentDescription = () => {
+    if (order.payment.method === "card") return `Card ending in ${order.payment.cardNumber?.replace(/\s/g, "").slice(-4) || "****"}`;
+    if (order.payment.method === "upi") return `UPI: ${order.payment.upiId || "Verified"}`;
+    if (order.payment.method === "paypal") return "PayPal";
+    if (order.payment.method === "klarna") return "Klarna";
+    return "Payment confirmed";
+  };
+
   if (!order) {
     return (
       <section className="max-w-[1600px] mx-auto px-8 py-20 min-h-[60vh] flex items-center justify-center">
@@ -159,13 +167,7 @@ export default function Confirmation() {
               Total Paid
             </div>
             <div className="font-serif text-3xl mb-2">€{order.total.toLocaleString()}</div>
-            <div className="text-[10px] text-muted-foreground">
-              {order.payment.method === "card"
-                ? `Card ending in ${order.payment.cardNumber?.slice(-4) || "****"}`
-                : order.payment.method === "paypal"
-                ? "PayPal"
-                : "Klarna"}
-            </div>
+            <div className="text-[10px] text-muted-foreground">{paymentDescription()}</div>
           </div>
 
           {/* Shipping */}

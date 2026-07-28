@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { allProducts } from "@/data/products";
+import { ordersApi } from "@/api/orders";
 
 const OrderContext = createContext();
 
@@ -50,6 +51,8 @@ const SEEDED_REVIEWS = (() => {
 
 export function OrdersProvider({ children }) {
   const [orders, setOrders] = useState(() => loadState("ef_orders", []));
+  const [customerApiOrders, setCustomerApiOrders] = useState([]);
+  const [customerOrdersLoading, setCustomerOrdersLoading] = useState(false);
   const [inventory, setInventory] = useState(() => {
     const cached = loadState("ef_inventory", null);
     if (cached) return cached;
@@ -143,6 +146,7 @@ export function OrdersProvider({ children }) {
       const total = Math.max(0, subtotal - (discount || 0));
 
       const orderItems = cartItems.map((item) => ({
+        productId: item.id || item.slug || item.name,
         name: item.name,
         price: item.price,
         qty: item.qty,
@@ -150,6 +154,8 @@ export function OrdersProvider({ children }) {
         selectedColor: item.selectedColor || null,
         img: item.img || item.image || null,
         vendorId: item.vendorId || "vendor-1",
+        isRental: !!item.isRental,
+        rentalDetails: item.rentalDetails || null,
       }));
 
       const now = new Date();
@@ -161,7 +167,7 @@ export function OrdersProvider({ children }) {
         discount: discount || 0,
         coupon: coupon || null,
         shipping: shippingInfo,
-        payment: { method: paymentMethod?.method || "card", details: paymentMethod?.details || null },
+        payment: { ...paymentMethod, method: paymentMethod?.method || "card" },
         status: "confirmed",
         date: now.toISOString(),
         estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -172,7 +178,7 @@ export function OrdersProvider({ children }) {
 
       orderItems.forEach((item) => {
         if (item.selectedSize) {
-          updateStock(item.vendorId || item.name, item.selectedSize, item.qty);
+          updateStock(item.productId, item.selectedSize, item.qty);
         }
       });
 
@@ -296,6 +302,101 @@ export function OrdersProvider({ children }) {
     );
   }, []);
 
+  const [vendorApiOrders, setVendorApiOrders] = useState([]);
+  const [adminApiOrders, setAdminApiOrders] = useState([]);
+  const [vendorOrdersLoading, setVendorOrdersLoading] = useState(false);
+  const [adminOrdersLoading, setAdminOrdersLoading] = useState(false);
+
+  const fetchVendorOrders = useCallback(async () => {
+    setVendorOrdersLoading(true);
+    try {
+      const data = await ordersApi.getVendorOrders();
+      const mapped = data.map((o) => ({
+        ...o,
+        id: o._id || o.id,
+        date: o.createdAt || o.date,
+        items: (o.items || []).map((item) => ({
+          ...item,
+          qty: item.quantity,
+          selectedSize: item.size,
+          selectedColor: item.color,
+        })),
+      }));
+      setVendorApiOrders(mapped);
+      return mapped;
+    } catch {
+      return [];
+    } finally {
+      setVendorOrdersLoading(false);
+    }
+  }, []);
+
+  const fetchAdminOrders = useCallback(async () => {
+    setAdminOrdersLoading(true);
+    try {
+      const data = await ordersApi.getAdminOrders();
+      const mapped = data.map((o) => ({
+        ...o,
+        id: o._id || o.id,
+        date: o.createdAt || o.date,
+        items: (o.items || []).map((item) => ({
+          ...item,
+          qty: item.quantity,
+          selectedSize: item.size,
+          selectedColor: item.color,
+        })),
+      }));
+      setAdminApiOrders(mapped);
+      return mapped;
+    } catch {
+      return [];
+    } finally {
+      setAdminOrdersLoading(false);
+    }
+  }, []);
+
+  const fetchCustomerOrders = useCallback(async () => {
+    setCustomerOrdersLoading(true);
+    try {
+      const data = await ordersApi.getUserOrders();
+      const mapped = data.map((o) => ({
+        ...o,
+        id: o._id || o.id,
+        date: o.createdAt || o.date,
+        items: (o.items || []).map((item) => ({
+          ...item,
+          qty: item.quantity,
+          selectedSize: item.size,
+          selectedColor: item.color,
+        })),
+      }));
+      setCustomerApiOrders(mapped);
+      return mapped;
+    } catch {
+      return [];
+    } finally {
+      setCustomerOrdersLoading(false);
+    }
+  }, []);
+
+  const updateOrderStatusApi = useCallback(async (orderId, status) => {
+    try {
+      await ordersApi.updateStatus(orderId, status);
+    } catch {
+      // fallback: update locally
+    }
+    updateOrderStatus(orderId, status);
+  }, [updateOrderStatus]);
+
+  const cancelOrderApi = useCallback(async (orderId, reason) => {
+    try {
+      await ordersApi.cancelOrder(orderId, reason);
+    } catch {
+      // fallback: update locally
+    }
+    updateOrderStatus(orderId, "cancelled");
+  }, [updateOrderStatus]);
+
   return (
     <OrderContext.Provider
       value={{
@@ -319,6 +420,17 @@ export function OrdersProvider({ children }) {
         getReviewsByProduct,
         getAverageRating,
         replyToReview,
+        vendorApiOrders,
+        adminApiOrders,
+        vendorOrdersLoading,
+        adminOrdersLoading,
+        fetchVendorOrders,
+        fetchAdminOrders,
+        fetchCustomerOrders,
+        customerApiOrders,
+        customerOrdersLoading,
+        updateOrderStatusApi,
+        cancelOrderApi,
       }}
     >
       {children}
