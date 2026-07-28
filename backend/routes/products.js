@@ -15,6 +15,7 @@ router.get('/', optionalAuth, async (req, res) => {
     }
     if (req.query.category) filter.category = req.query.category;
     if (req.query.gender) filter.gender = req.query.gender;
+    if (req.query.vendorId) filter.vendorId = req.query.vendorId;
     if (req.query.minPrice || req.query.maxPrice) {
       filter.price = {};
       if (req.query.minPrice) filter.price.$gte = Number(req.query.minPrice);
@@ -40,21 +41,25 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/', vendorOnly, async (req, res) => {
+router.post('/', authMiddleware, vendorOnly, async (req, res) => {
   try {
-    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, images } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, images, inventory: requestedInventory } = req.body;
 
-    if (!name || !price) {
+    if (!name || price === undefined || price === null) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
+    if (!img && !(images?.length)) return res.status(400).json({ error: 'At least one product image is required' });
 
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const inventory = (sizes || []).map((size) => ({ size, stock: 10 }));
+    const inventory = Array.isArray(requestedInventory)
+      ? requestedInventory
+      : (sizes || []).map((size) => ({ size, stock: 10 }));
 
     const product = await Product.create({
       _id: id, name, price, tag: category || '', category: category || '', gender: gender || 'Unisex',
       colors: colors || [], sizes: sizes || [], description: description || '',
-      vendorId: req.user.id, img: img || '/assets/dress-hero.png', images: images || [],
+      vendorId: (req.user.role === 'admin' && req.body.vendorId) ? req.body.vendorId : req.user.id,
+      img: img || images[0], images: images?.length ? images : [img],
       rentalAvailable: !!rentalAvailable, rentalPricePerDay: rentalPricePerDay || 0, inventory,
     });
 
@@ -64,7 +69,7 @@ router.post('/', vendorOnly, async (req, res) => {
   }
 });
 
-router.put('/:id', vendorOnly, async (req, res) => {
+router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
@@ -75,7 +80,7 @@ router.put('/:id', vendorOnly, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this product' });
     }
 
-    const { name, price, category, gender, colors, sizes, description, img, images, rentalAvailable, rentalPricePerDay } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, images, rentalAvailable, rentalPricePerDay, vendorId } = req.body;
 
     if (name !== undefined) product.name = name;
     if (price !== undefined) product.price = price;
@@ -88,6 +93,7 @@ router.put('/:id', vendorOnly, async (req, res) => {
     if (images !== undefined) product.images = images;
     if (rentalAvailable !== undefined) product.rentalAvailable = rentalAvailable;
     if (rentalPricePerDay !== undefined) product.rentalPricePerDay = rentalPricePerDay;
+    if (req.user.role === 'admin' && vendorId !== undefined) product.vendorId = vendorId;
 
     await product.save();
     res.json(product.toObject());
@@ -96,7 +102,7 @@ router.put('/:id', vendorOnly, async (req, res) => {
   }
 });
 
-router.delete('/:id', vendorOnly, async (req, res) => {
+router.delete('/:id', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
@@ -126,7 +132,7 @@ router.get('/:id/stock', async (req, res) => {
   }
 });
 
-router.put('/:id/stock', vendorOnly, async (req, res) => {
+router.put('/:id/stock', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {

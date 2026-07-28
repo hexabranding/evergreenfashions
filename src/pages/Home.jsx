@@ -2,8 +2,10 @@ import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion"
 import { useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Heart, Star } from "lucide-react";
+import AdvertisementSlider from "@/components/AdvertisementSlider";
 import { useCart } from "@/context/CartContext";
 import { allProducts, parsePrice, colorMap } from "@/data/products";
+import { useProducts } from "@/context/ProductContext";
 
 const dressHero = allProducts.find(p => p.id === "ecarlate-gown")?.img;
 const dress2 = allProducts.find(p => p.id === "noir-silhouette")?.img;
@@ -23,11 +25,9 @@ const heroSlides = [
   { img: dress4, name: "Émeraude Gown", price: 1420, tag: "Couture" },
 ];
 
-const menswearProducts = allProducts.filter(p => p.gender === "Menswear");
-const womenswearProducts = allProducts.filter(p => p.gender === "Womenswear");
-
 export default function Home() {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const { products } = useProducts();
   const [heroIndex, setHeroIndex] = useState(0);
   const [menCat, setMenCat] = useState("All");
   const [womenCat, setWomenCat] = useState("All");
@@ -36,11 +36,11 @@ export default function Home() {
   const womenCategories = ["All", "Dresses", "Apparel", "Shoes"];
 
   const filteredMen = menCat === "All"
-    ? menswearProducts
-    : menswearProducts.filter(p => p.category === menCat);
+    ? products.filter(p => p.gender === "Menswear")
+    : products.filter(p => p.gender === "Menswear" && p.category === menCat);
   const filteredWomen = womenCat === "All"
-    ? womenswearProducts
-    : womenswearProducts.filter(p => p.category === womenCat);
+    ? products.filter(p => p.gender === "Womenswear")
+    : products.filter(p => p.gender === "Womenswear" && p.category === womenCat);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -272,7 +272,7 @@ export default function Home() {
         </motion.div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          {allProducts.slice(0, 4).map((p, i) => (
+          {products.slice(0, 4).map((p, i) => (
             <motion.article
               key={`new-${p.id}-${i}`}
               initial={{ opacity: 0, y: 50 }}
@@ -345,6 +345,54 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Advertisement Banner */}
+      <AdvertisementSlider />
+      {/*
+        <div className="relative h-[500px] md:h-[600px]">
+          <img
+            src={dressHero}
+            alt="Evergreen Fashion"
+            className="w-full h-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-ink/80 via-ink/40 to-transparent" />
+          <div className="absolute inset-0 flex items-center">
+            <div className="max-w-[1600px] mx-auto px-8 w-full">
+              <motion.div
+                initial={{ opacity: 0, x: -40 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.8 }}
+                className="max-w-lg"
+              >
+                <p className="eyebrow mb-3 text-blush/80">— Limited Time Offer</p>
+                <h2 className="text-display text-4xl md:text-6xl text-cream leading-tight">
+                  Summer Sale<br />
+                  <em className="text-blush">Up to 40% Off</em>
+                </h2>
+                <p className="text-cream/70 mt-6 text-sm leading-relaxed max-w-md">
+                  Discover our curated selection of premium pieces at exclusive prices.
+                  From haute couture to everyday elegance — elevate your wardrobe for less.
+                </p>
+                <div className="flex gap-4 mt-8">
+                  <Link
+                    to="/collection"
+                    className="inline-flex items-center gap-3 bg-cream text-ink px-8 py-3 text-[10px] tracking-[0.25em] uppercase hover:bg-blush hover:text-ink transition-colors"
+                  >
+                    Shop the Sale <ArrowRight className="w-4 h-4" />
+                  </Link>
+                  <Link
+                    to="/rental"
+                    className="inline-flex items-center gap-3 border border-cream/30 text-cream px-8 py-3 text-[10px] tracking-[0.25em] uppercase hover:bg-cream/10 transition-colors"
+                  >
+                    Explore Rentals
+                  </Link>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      */}
+
       {/* The Collection */}
       <section id="collection" className="bg-secondary/30 py-24">
         <div className="max-w-[1600px] mx-auto px-8">
@@ -366,7 +414,7 @@ export default function Home() {
           </motion.div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 lg:gap-8">
-            {allProducts.slice(0, 10).map((p, i) => (
+            {products.slice(0, 10).map((p, i) => (
               <motion.article
                 key={`col-${p.id}-${i}`}
                 initial={{ opacity: 0, y: 50 }}

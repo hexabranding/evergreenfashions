@@ -5,6 +5,8 @@ import { useOrders } from "@/context/OrderContext";
 import { allProducts, parsePrice } from "@/data/products";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
+import { adsApi } from "@/api/ads";
+import { productsApi } from "@/api/products";
 import {
   LayoutDashboard,
   Package,
@@ -280,7 +282,7 @@ export default function AdminDashboard() {
 
   const [users, setUsers] = useState(authUsers || []);
   const [vendors, setVendors] = useState(authVendors || []);
-  const [products, setProducts] = useState([...allProducts]);
+  const [products, setProducts] = useState([]);
 
   const [activeTab, setActiveTab] = useState("dashboard");
   const [accessDenied, setAccessDenied] = useState(false);
@@ -294,6 +296,10 @@ export default function AdminDashboard() {
   const [editingUser, setEditingUser] = useState(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
   const [vendorSearch, setVendorSearch] = useState("");
+  const [showAddVendor, setShowAddVendor] = useState(false);
+  const [newVendorForm, setNewVendorForm] = useState({
+    firstName: "", lastName: "", email: "", password: "",
+  });
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [editingVendor, setEditingVendor] = useState(null);
   const [editVendorForm, setEditVendorForm] = useState({ storeName: "", description: "", commission: 15 });
@@ -308,14 +314,14 @@ export default function AdminDashboard() {
   const [selectedRental, setSelectedRental] = useState(null);
   const [editingRental, setEditingRental] = useState(null);
   const [editRentalForm, setEditRentalForm] = useState({ name: "", pricePerDay: 0, status: "active" });
-  const [ads, setAds] = useState(MOCK_ADS);
+  const [ads, setAds] = useState([]);
   const [productCommission, setProductCommission] = useState(15);
   const [rentalCommission, setRentalCommission] = useState(20);
   const [featuredProducts, setFeaturedProducts] = useState(allProducts.slice(0, 4));
   const [availableProducts, setAvailableProducts] = useState(allProducts.slice(4, 12));
   const [reportPeriod, setReportPeriod] = useState("Jul 2026");
   const [previewAd, setPreviewAd] = useState(null);
-  const [newAdForm, setNewAdForm] = useState({ title: "", type: "banner", position: "homepage-top", startDate: "", endDate: "" });
+  const [newAdForm, setNewAdForm] = useState({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
   const [showNewAdForm, setShowNewAdForm] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -334,6 +340,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     setVendors(authVendors || []);
   }, [authVendors]);
+
+  useEffect(() => {
+    adsApi.getAll().then((data) => setAds(data.map((ad) => ({ ...ad, id: ad._id })))).catch(() => setAds([]));
+  }, []);
+
+  useEffect(() => {
+    productsApi.getAll().then((data) => setProducts(data.map((product) => ({ ...product, id: product._id })))).catch(() => setProducts([]));
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== "admin") {
@@ -548,6 +562,35 @@ export default function AdminDashboard() {
     setEditingVendor(null);
   };
 
+  const handleAddVendor = async () => {
+    const { firstName, lastName, email, password } = newVendorForm;
+    if (!firstName || !lastName || !email || !password) return;
+
+    try {
+      const token = localStorage.getItem("evergreen_token");
+      const res = await fetch("http://localhost:5000/api/auth/register-vendor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ firstName, lastName, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to create vendor"); return; }
+
+      setVendors((prev) => [...prev, {
+        id: data._id, firstName: data.firstName, lastName: data.lastName, email: data.email,
+        storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
+        description: data.vendorStore?.description || "",
+        commission: data.vendorStore?.commission || 15,
+        suspended: false, totalProducts: 0, totalSales: 0, totalEarnings: 0, pendingPayout: 0,
+        joinedAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+      }]);
+      setNewVendorForm({ firstName: "", lastName: "", email: "", password: "" });
+      setShowAddVendor(false);
+    } catch {
+      alert("Failed to connect to server");
+    }
+  };
+
   const addFeatured = (product) => {
     if (featuredProducts.find((p) => p.id === product.id)) return;
     setFeaturedProducts((prev) => [...prev, product]);
@@ -559,54 +602,48 @@ export default function AdminDashboard() {
     setAvailableProducts((prev) => [product, ...prev]);
   };
 
-  const toggleAd = (id) => {
-    setAds((prev) => prev.map((a) => (a.id === id ? { ...a, active: !a.active } : a)));
+  const toggleAd = async (id) => {
+    const ad = ads.find((item) => item.id === id);
+    if (!ad) return;
+    try {
+      const saved = await adsApi.update(id, { active: !ad.active });
+      setAds((prev) => prev.map((item) => (item.id === id ? { ...saved, id: saved._id } : item)));
+    } catch { alert("Could not update this advertisement."); }
   };
 
-  const addNewAd = () => {
-    if (!newAdForm.title.trim()) return;
-    setAds((prev) => [
-      ...prev,
-      {
-        id: `ad-${Date.now()}`,
-        ...newAdForm,
-        active: true,
-        impressions: 0,
-        clicks: 0,
-      },
-    ]);
-    setNewAdForm({ title: "", type: "banner", position: "homepage-top", startDate: "", endDate: "" });
-    setShowNewAdForm(false);
+  const addNewAd = async () => {
+    if (!newAdForm.title.trim() || !newAdForm.image) return;
+    try {
+      const saved = await adsApi.create(newAdForm);
+      setAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
+      setNewAdForm({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
+      setShowNewAdForm(false);
+    } catch (error) { alert(error.message || "Could not create advertisement."); }
+  };
+
+  const handleAdImage = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return alert("Please select an image file.");
+    const reader = new FileReader();
+    reader.onload = () => setNewAdForm((prev) => ({ ...prev, image: reader.result }));
+    reader.readAsDataURL(file);
   };
 
   const deleteAd = (id) => {
     openConfirm("Delete Ad", "Are you sure you want to delete this advertisement?", () => {
-      setAds((prev) => prev.filter((a) => a.id !== id));
-      closeConfirm();
+      adsApi.remove(id).then(() => { setAds((prev) => prev.filter((a) => a.id !== id)); closeConfirm(); }).catch(() => alert("Could not delete this advertisement."));
     }, "Delete");
   };
 
   const deleteProduct = (id) => {
     openConfirm("Delete Product", "Are you sure you want to delete this product?", () => {
-      setProducts((prev) => prev.filter((p) => p.id !== id));
-      closeConfirm();
+      productsApi.delete(id).then(() => { setProducts((prev) => prev.filter((p) => p.id !== id)); closeConfirm(); }).catch((error) => alert(error.message || "Could not delete product."));
     }, "Delete");
   };
 
   const startEditProduct = (p) => {
-    setEditingProduct(p.id);
-    setEditProductForm({ name: p.name || "", category: p.category || "", price: p.price || 0, vendor: p.vendor || "" });
-  };
-
-  const saveEditProduct = () => {
-    setProducts((prev) => prev.map((p) =>
-      p.id === editingProduct ? { ...p, ...editProductForm } : p
-    ));
-    setEditingProduct(null);
-  };
-
-  const cancelEditProduct = () => {
-    setEditingProduct(null);
+    setEditingProduct(p);
+    setShowAddForm(true);
   };
 
   const startEditRental = (r) => {
@@ -625,13 +662,22 @@ export default function AdminDashboard() {
     setEditingRental(null);
   };
 
-  const handleAddProduct = (product) => {
-    const newProduct = {
-      ...product,
-      id: `prod-${Date.now()}`,
-      date: new Date().toISOString().slice(0, 10),
-    };
-    setProducts((prev) => [...prev, newProduct]);
+  const handleSaveProduct = async (payload) => {
+    try {
+      const inventory = Object.entries(payload.stock || {}).map(([size, stock]) => ({ size, stock }));
+      const dataToSave = { ...payload, inventory };
+      
+      let saved;
+      if (editingProduct) {
+        saved = await productsApi.update(editingProduct.id, dataToSave);
+        setProducts((prev) => prev.map((product) => product.id === editingProduct.id ? { ...saved, id: saved._id || saved.id } : product));
+      } else {
+        saved = await productsApi.create(dataToSave);
+        setProducts((prev) => [{ ...saved, id: saved._id || saved.id }, ...prev]);
+      }
+      setShowAddForm(false);
+      setEditingProduct(null);
+    } catch (error) { alert(error.message || "Could not save product."); }
   };
 
   const handleExport = () => {
@@ -1008,16 +1054,66 @@ export default function AdminDashboard() {
           <StatCard icon={Banknote} label="Pending Payouts" value={`$${vendorStats.pendingPayouts.toLocaleString()}`} index={3} />
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search vendors..."
-            value={vendorSearch}
-            onChange={(e) => setVendorSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
-          />
+        <div className="flex items-center justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search vendors..."
+              value={vendorSearch}
+              onChange={(e) => setVendorSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
+            />
+          </div>
+          <button
+            onClick={() => setShowAddVendor(!showAddVendor)}
+            className="btn-ink px-5 py-3 text-xs tracking-widest uppercase flex items-center gap-2 ml-4"
+          >
+            <Plus size={14} />
+            {showAddVendor ? "Close" : "Add Vendor"}
+          </button>
         </div>
+
+        <AnimatePresence>
+          {showAddVendor && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-cream border border-border overflow-hidden"
+            >
+              <div className="p-6 space-y-4">
+                <p className="eyebrow">Add New Vendor</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">First Name</label>
+                    <input type="text" value={newVendorForm.firstName} onChange={(e) => setNewVendorForm((p) => ({ ...p, firstName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Last Name</label>
+                    <input type="text" value={newVendorForm.lastName} onChange={(e) => setNewVendorForm((p) => ({ ...p, lastName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Email</label>
+                    <input type="email" value={newVendorForm.email} onChange={(e) => setNewVendorForm((p) => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Password</label>
+                    <input type="password" value={newVendorForm.password} onChange={(e) => setNewVendorForm((p) => ({ ...p, password: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={handleAddVendor} disabled={!newVendorForm.firstName || !newVendorForm.lastName || !newVendorForm.email || !newVendorForm.password} className="btn-ink px-6 py-2.5 text-xs tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                    Create Vendor
+                  </button>
+                  <button onClick={() => setShowAddVendor(false)} className="px-6 py-2.5 text-xs tracking-widest uppercase border border-border text-foreground hover:bg-secondary transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
@@ -1304,8 +1400,10 @@ export default function AdminDashboard() {
         {showAddForm && (
           <AddProductForm
             categories={MOCK_CATEGORIES.filter((c) => c.active)}
-            onSave={(p) => { handleAddProduct(p); setShowAddForm(false); }}
-            onCancel={() => setShowAddForm(false)}
+            vendors={vendors}
+            editProduct={editingProduct}
+            onSave={handleSaveProduct}
+            onCancel={() => { setShowAddForm(false); setEditingProduct(null); }}
           />
         )}
       </AnimatePresence>
@@ -1404,78 +1502,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <AnimatePresence>
-        {editingProduct && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4"
-            onClick={cancelEditProduct}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-background border border-border w-full max-w-md"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                <h3 className="font-serif text-lg text-foreground">Edit Product</h3>
-                <button onClick={cancelEditProduct} className="p-2 hover:bg-secondary transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Name</label>
-                  <input
-                    type="text"
-                    value={editProductForm.name}
-                    onChange={(e) => setEditProductForm((prev) => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Category</label>
-                  <input
-                    type="text"
-                    value={editProductForm.category}
-                    onChange={(e) => setEditProductForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Price ($)</label>
-                  <input
-                    type="number"
-                    value={editProductForm.price}
-                    onChange={(e) => setEditProductForm((prev) => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
-                    className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Vendor</label>
-                  <input
-                    type="text"
-                    value={editProductForm.vendor}
-                    onChange={(e) => setEditProductForm((prev) => ({ ...prev, vendor: e.target.value }))}
-                    className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                  />
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-border">
-                  <button onClick={saveEditProduct} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
-                    <Check size={14} /> Save
-                  </button>
-                  <button onClick={cancelEditProduct} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {previewProduct && (
@@ -1984,7 +2010,12 @@ export default function AdminDashboard() {
                     <option value="banner">Banner</option>
                     <option value="sidebar">Sidebar</option>
                     <option value="popup">Popup</option>
+                    <option value="slide">Homepage Slide</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Subtitle</label>
+                  <input type="text" value={newAdForm.subtitle} onChange={(e) => setNewAdForm((prev) => ({ ...prev, subtitle: e.target.value }))} placeholder="Optional offer or message" className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Position</label>
@@ -2019,11 +2050,20 @@ export default function AdminDashboard() {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Advertisement Image</label>
+                  <input type="file" accept="image/*" onChange={(e) => handleAdImage(e.target.files?.[0])} className="w-full px-3 py-2 bg-background border border-border text-sm" />
+                  {newAdForm.image && <img src={newAdForm.image} alt="New advertisement preview" className="mt-3 h-24 w-40 object-cover border border-border" />}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Button Text</label><input type="text" value={newAdForm.buttonText} onChange={(e) => setNewAdForm((prev) => ({ ...prev, buttonText: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-sm" /></div>
+                  <div><label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Link</label><input type="text" value={newAdForm.link} onChange={(e) => setNewAdForm((prev) => ({ ...prev, link: e.target.value }))} placeholder="/collection" className="w-full px-4 py-2.5 bg-background border border-border text-sm" /></div>
+                </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={addNewAd}
-                  disabled={!newAdForm.title.trim()}
+                  disabled={!newAdForm.title.trim() || !newAdForm.image}
                   className="btn-ink btn-ink-hover px-6 py-2.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Send size={14} /> Create Ad

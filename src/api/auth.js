@@ -11,6 +11,12 @@ export const authApi = {
     setToken(res.token);
     return res;
   },
+  requestPhoneOtp: (phone) => api.post("/auth/phone-otp/request", { phone }),
+  verifyPhoneOtp: async (phone, otp) => {
+    const res = await api.post("/auth/phone-otp/verify", { phone, otp });
+    setToken(res.token);
+    return res;
+  },
   getMe: () => api.get("/auth/me"),
   updateProfile: (data) => api.put("/auth/me", data),
   addAddress: (address) => api.post("/auth/me/addresses", address),

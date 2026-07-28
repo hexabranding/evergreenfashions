@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { useOrders } from "@/context/OrderContext";
+import { useAuth } from "@/context/AuthContext";
 
 const CartContext = createContext();
 
@@ -29,6 +30,7 @@ function getItemPrice(item) {
 
 export function CartProvider({ children }) {
   const { updateStock } = useOrders();
+  const { isAuthenticated, requestPhoneLogin } = useAuth();
   const [cartItems, setCartItems] = useState(() => loadState("ef_cart", []));
   const [wishlist, setWishlist] = useState(() => loadState("ef_wishlist", []));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -172,12 +174,17 @@ export function CartProvider({ children }) {
   );
 
   const toggleWishlist = useCallback((product) => {
+    if (!isAuthenticated) {
+      requestPhoneLogin(() => setWishlist((prev) => [...prev, product]));
+      return false;
+    }
     setWishlist((prev) => {
       const exists = prev.find((item) => item.name === product.name);
       if (exists) return prev.filter((item) => item.name !== product.name);
       return [...prev, product];
     });
-  }, []);
+    return true;
+  }, [isAuthenticated, requestPhoneLogin]);
 
   const isWishlisted = useCallback(
     (name) => wishlist.some((item) => item.name === name),

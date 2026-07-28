@@ -4,21 +4,23 @@ import { Heart } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useCart } from "@/context/CartContext";
 import { allProducts, colorMap, parsePrice } from "@/data/products";
+import { useProducts } from "@/context/ProductContext";
 
 const categories = ["All", "Dresses", "Apparel", "Shoes", "Menswear", "Womenswear"];
 
 export default function Collection() {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const { products } = useProducts();
   const [activeCategory, setActiveCategory] = useState("All");
 
   const filtered =
     activeCategory === "All"
-      ? allProducts
+      ? products
       : activeCategory === "Menswear"
-      ? allProducts.filter((p) => p.gender === "Menswear")
+      ? products.filter((p) => p.gender === "Menswear")
       : activeCategory === "Womenswear"
-      ? allProducts.filter((p) => p.gender === "Womenswear")
-      : allProducts.filter((p) => p.category === activeCategory);
+      ? products.filter((p) => p.gender === "Womenswear")
+      : products.filter((p) => p.category === activeCategory);
 
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-20">
@@ -59,10 +61,10 @@ export default function Collection() {
             {cat !== "All" && (
               <span className="ml-1.5 text-[9px] opacity-60">
                 ({cat === "Menswear"
-                  ? allProducts.filter((p) => p.gender === "Menswear").length
+                  ? products.filter((p) => p.gender === "Menswear").length
                   : cat === "Womenswear"
-                  ? allProducts.filter((p) => p.gender === "Womenswear").length
-                  : allProducts.filter((p) => p.category === cat).length})
+                  ? products.filter((p) => p.gender === "Womenswear").length
+                  : products.filter((p) => p.category === cat).length})
               </span>
             )}
           </button>

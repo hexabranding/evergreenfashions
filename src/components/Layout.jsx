@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import MobileNav from "./MobileNav";
 import MiniCart from "./MiniCart";
 import { allProducts } from "@/data/products";
+import { useProducts } from "@/context/ProductContext";
 
 const menuCategories = [
   { label: "Men", path: "/collection" },
@@ -42,6 +43,7 @@ const footerCompany = ["About Us", "Atelier", "Sustainability", "Careers", "Pres
 const footerHelp = ["Contact Us", "Shipping Info", "Returns", "Size Guide", "FAQ"];
 
 export default function Layout() {
+  const { products } = useProducts();
   const [menuOpen, setMenuOpen] = useState(false);
   const [miniCartOpen, setMiniCartOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -59,7 +61,7 @@ export default function Layout() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       setResults(
-        allProducts.filter(
+        products.filter(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             p.tag.toLowerCase().includes(q) ||

@@ -5,8 +5,7 @@ import { Calendar, Clock, Truck, ShieldCheck, Star, Heart, ChevronLeft, ChevronR
 import { allProducts, colorMap, parsePrice } from "@/data/products";
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
-
-const rentalProducts = allProducts.filter((p) => p.rentalAvailable);
+import { useProducts } from "@/context/ProductContext";
 
 const steps = [
   {
@@ -249,6 +248,8 @@ function RentalCard({ product }) {
 }
 
 export default function Rental() {
+  const { products } = useProducts();
+  const rentalProducts = products.filter((p) => p.rentalAvailable);
   const [openFaq, setOpenFaq] = useState(null);
 
   return (

@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { parsePrice } from "@/data/products";
+import { useAuth } from "@/context/AuthContext";
 
 const steps = ["Shipping", "Payment", "Review"];
 
@@ -15,6 +16,7 @@ function formatPrice(val) {
 export default function Checkout() {
   const { cartItems, cartSubtotal, cartTotal, placeOrder, coupon, discount, freeShipping } = useCart();
   const navigate = useNavigate();
+  const { isAuthenticated, requestPhoneLogin, currentUser } = useAuth();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [shipping, setShipping] = useState({
@@ -34,6 +36,11 @@ export default function Checkout() {
     method: "card",
     upiId: "",
   });
+
+  useEffect(() => { if (!isAuthenticated) requestPhoneLogin(); }, [isAuthenticated, requestPhoneLogin]);
+  useEffect(() => { if (currentUser) setShipping((previous) => ({ ...previous, firstName: previous.firstName || currentUser.firstName || "", lastName: previous.lastName || currentUser.lastName || "", email: previous.email || currentUser.email || "" })); }, [currentUser]);
+
+  if (!isAuthenticated) return <section className="max-w-xl mx-auto px-8 py-24 min-h-[60vh] text-center"><Smartphone className="w-8 h-8 mx-auto mb-4 text-crimson" /><h1 className="font-serif text-3xl mb-3">Sign in to checkout</h1><p className="text-muted-foreground">Please verify your phone number with an OTP to continue.</p></section>;
 
   if (cartItems.length === 0 && step === 0) {
     return (

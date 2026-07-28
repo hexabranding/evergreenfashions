@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import SizeGuide from "@/components/SizeGuide";
 import { allProducts, colorMap, parsePrice } from "@/data/products";
+import { useProducts } from "@/context/ProductContext";
 
 function getColorHex(c) {
   return colorMap[c] || "#ccc";
@@ -16,6 +17,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart, buyNow, toggleWishlist, isWishlisted } = useCart();
   const { getAverageRating, getReviewsByProduct } = useOrders();
+  const { products } = useProducts();
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
   const [mainImage, setMainImage] = useState(0);
@@ -24,7 +26,7 @@ export default function ProductDetail() {
   const [rentalStart, setRentalStart] = useState("");
   const [rentalEnd, setRentalEnd] = useState("");
 
-  const product = allProducts.find((p) => p.id === name);
+  const product = products.find((p) => p.id === name);
 
   useEffect(() => {
     if (product?.colors?.length && !selectedColor) {
@@ -48,7 +50,7 @@ export default function ProductDetail() {
   const avgRating = getAverageRating(product.id);
   const reviews = getReviewsByProduct(product.id);
 
-  const relatedProducts = allProducts
+  const relatedProducts = products
     .filter((p) => p.category === product.category && p.name !== product.name)
     .slice(0, 4);
 

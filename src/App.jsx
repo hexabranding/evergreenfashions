@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { OrdersProvider } from "@/context/OrderContext";
+import { ProductProvider } from "@/context/ProductContext";
 import Layout from "./components/Layout";
 import Home from "./pages/Home";
 import Collection from "./pages/Collection";
@@ -32,7 +33,8 @@ function ScrollToTop() {
 function App() {
   return (
     <AuthProvider>
-      <OrdersProvider>
+      <ProductProvider>
+       <OrdersProvider>
         <CartProvider>
           <ScrollToTop />
           <Routes>
@@ -80,6 +82,7 @@ function App() {
           </Routes>
         </CartProvider>
       </OrdersProvider>
+      </ProductProvider>
     </AuthProvider>
   );
 }

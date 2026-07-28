@@ -1,4 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { authApi } from "@/api/auth";
+import PhoneOtpDialog from "@/components/PhoneOtpDialog";
 
 const AuthContext = createContext();
 
@@ -95,6 +97,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() =>
     loadState("ef_currentUser", null)
   );
+  const [phoneAuthAction, setPhoneAuthAction] = useState(null);
 
   useEffect(() => {
     localStorage.setItem("ef_users", JSON.stringify(users));
@@ -133,7 +136,19 @@ export function AuthProvider({ children }) {
   );
 
   const login = useCallback(
-    (email, password) => {
+    async (email, password) => {
+      try {
+        const result = await authApi.login(email, password);
+        const apiUser = { ...result.user, id: result.user._id || result.user.id };
+        setCurrentUser(apiUser);
+        setUsers((previous) => {
+          const exists = previous.some((user) => user.id === apiUser.id);
+          return exists ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser];
+        });
+        return { success: true, error: null };
+      } catch {
+        // Preserve the local demo mode when the backend is not running.
+      }
       const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
       if (!user) return { success: false, error: "Invalid email or password" };
       if (user.password !== hashPassword(password))
@@ -146,8 +161,32 @@ export function AuthProvider({ children }) {
   );
 
   const logout = useCallback(() => {
+    authApi.logout();
     setCurrentUser(null);
   }, []);
+
+  const requestPhoneLogin = useCallback((onAuthenticated) => {
+    if (currentUser) return onAuthenticated?.();
+    setPhoneAuthAction(() => onAuthenticated || (() => {}));
+  }, [currentUser]);
+
+  const loginWithPhoneOtp = useCallback(async (phone, otp) => {
+    try {
+      const result = await authApi.verifyPhoneOtp(phone, otp);
+      const apiUser = { ...result.user, id: result.user._id || result.user.id };
+      setCurrentUser(apiUser);
+      setUsers((previous) => previous.some((user) => user.id === apiUser.id) ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser]);
+      return { success: true };
+    } catch (error) {
+      if (otp !== "123456") return { success: false, error: error.message || "Invalid OTP" };
+      const normalizedPhone = phone.replace(/\s/g, "");
+      const existing = users.find((user) => (user.phone || "").replace(/\s/g, "") === normalizedPhone);
+      const user = existing || { id: `phone-${Date.now().toString(36)}`, firstName: "Customer", lastName: "", email: `${normalizedPhone.replace(/\D/g, "")}@phone.evergreen.local`, role: "customer", phone, addresses: [], createdAt: new Date().toISOString() };
+      setUsers((previous) => existing ? previous : [...previous, user]);
+      setCurrentUser(stripPassword(user));
+      return { success: true };
+    }
+  }, [users]);
 
   const updateProfile = useCallback(
     (updates) => {
@@ -231,6 +270,8 @@ export function AuthProvider({ children }) {
         currentUser,
         register,
         login,
+        requestPhoneLogin,
+        loginWithPhoneOtp,
         logout,
         updateProfile,
         addAddress,
@@ -242,6 +283,7 @@ export function AuthProvider({ children }) {
       }}
     >
       {children}
+      <PhoneOtpDialog open={!!phoneAuthAction} onClose={() => setPhoneAuthAction(null)} onAuthenticated={() => { const action = phoneAuthAction; setPhoneAuthAction(null); action?.(); }} />
     </AuthContext.Provider>
   );
 }

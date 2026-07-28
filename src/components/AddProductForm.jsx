@@ -40,7 +40,7 @@ const fadeUp = {
   }),
 };
 
-export default function AddProductForm({ categories, onSave, onCancel, editProduct }) {
+export default function AddProductForm({ categories, vendors, onSave, onCancel, editProduct }) {
   const fileInputRef = useRef(null);
 
   const [form, setForm] = useState({
@@ -56,6 +56,7 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
     colors: editProduct?.colors || [],
     images: editProduct?.images || [],
     stock: editProduct?.stock || {},
+    vendorId: editProduct?.vendorId || editProduct?.vendor || "",
   });
 
   const [imagePreviews, setImagePreviews] = useState(
@@ -144,7 +145,7 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name || !form.category || !form.price) return;
+    if (!form.name || !form.category || !form.price || form.images.length === 0) return;
 
     const product = {
       id: editProduct?.id || `product-${Date.now()}`,
@@ -161,6 +162,7 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
       images: form.images,
       img: form.images[0] || null,
       tag: form.category,
+      vendorId: form.vendorId || editProduct?.vendorId || "ef-main",
     };
 
     onSave(product);
@@ -228,6 +230,26 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
               </div>
             </div>
 
+            {vendors && (
+              <div>
+                <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Vendor *</label>
+                <select
+                  value={form.vendorId}
+                  onChange={(e) => setForm((p) => ({ ...p, vendorId: e.target.value }))}
+                  className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
+                  required
+                >
+                  <option value="">Select vendor</option>
+                  {vendors.map((v) => (
+                    <option key={v.id || v.userId} value={v.id || v.userId}>
+                      {v.storeName || v.name || v.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+
             <div>
               <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Price (€) *</label>
               <div className="relative">
@@ -288,7 +310,7 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
 
           <div className="space-y-6">
             <div>
-              <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Product Images</label>
+              <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Product Images *</label>
               <div className="grid grid-cols-3 gap-3 mb-3">
                 {imagePreviews.map((preview, i) => (
                   <div key={i} className="relative aspect-square bg-cream border border-border/60 rounded-sm overflow-hidden group">
@@ -324,7 +346,7 @@ export default function AddProductForm({ categories, onSave, onCancel, editProdu
                 onChange={handleImageUpload}
                 className="hidden"
               />
-              <p className="text-[11px] text-muted-foreground">Upload product photos. First image will be the main image.</p>
+              <p className="text-[11px] text-muted-foreground">Upload at least one product photo. The first image will be the main image.</p>
             </div>
 
             <div>

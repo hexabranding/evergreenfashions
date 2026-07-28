@@ -1,10 +1,13 @@
 import { useAuth } from "@/context/AuthContext";
 import { useOrders } from "@/context/OrderContext";
 import { allProducts, parsePrice } from "@/data/products";
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
+import { adsApi } from "@/api/ads";
+import { productsApi } from "@/api/products";
+import { authApi } from "@/api/auth";
 import {
   Package,
   DollarSign,
@@ -65,6 +68,7 @@ const TABS = [
   { key: "rentalOrders", label: "Rental Orders", icon: RefreshCw },
   { key: "messages", label: "Messages", icon: MessageSquare },
   { key: "earnings", label: "Earnings", icon: DollarSign },
+  { key: "ads", label: "Advertisements", icon: Image },
   { key: "withdrawals", label: "Withdrawals", icon: Wallet },
   { key: "profile", label: "Profile", icon: User },
 ];
@@ -338,9 +342,49 @@ export default function VendorDashboard() {
 
   const [newProductForm, setNewProductForm] = useState(false);
   const [vendorProductsList, setVendorProductsList] = useState([]);
+  const [vendorAds, setVendorAds] = useState([]);
+  const [showAdForm, setShowAdForm] = useState(false);
+  const [adForm, setAdForm] = useState({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
   const [editingProduct, setEditingProduct] = useState(null);
 
   const [localInventory, setLocalInventory] = useState({});
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    adsApi.getForVendor(currentUser.id).then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id })))).catch(() => setVendorAds([]));
+  }, [currentUser?.id]);
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    // Vendors use the same catalogue as the admin dashboard. Products created by an
+    // admin are therefore visible immediately, even before a vendor is assigned.
+    productsApi.getAll().then((data) => setVendorProductsList(data.map((product) => ({ ...product, id: product._id || product.id, stock: Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) })))).catch(() => setVendorProductsList(allProducts.map((product) => ({ ...product, stock: product.stock || {} }))));
+  }, [currentUser?.id]);
+
+  const handleAdImage = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return alert("Please select an image file.");
+    const reader = new FileReader();
+    reader.onload = () => setAdForm((prev) => ({ ...prev, image: reader.result }));
+    reader.readAsDataURL(file);
+  };
+  const submitAd = async () => {
+    if (!adForm.title.trim() || !adForm.image) return;
+    try {
+      const saved = await adsApi.create(adForm);
+      setVendorAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
+      setAdForm({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
+      setShowAdForm(false);
+    } catch (error) { alert(error.message || "Could not create advertisement."); }
+  };
+  const updateVendorAd = async (ad) => {
+    try { const saved = await adsApi.update(ad.id, { active: !ad.active }); setVendorAds((prev) => prev.map((item) => item.id === ad.id ? { ...saved, id: saved._id } : item)); }
+    catch { alert("Could not update this advertisement."); }
+  };
+  const removeVendorAd = async (id) => {
+    if (!window.confirm("Delete this advertisement?")) return;
+    try { await adsApi.remove(id); setVendorAds((prev) => prev.filter((ad) => ad.id !== id)); }
+    catch { alert("Could not delete this advertisement."); }
+  };
 
   if (!isAuthenticated || !isVendor) {
     return (
@@ -366,30 +410,9 @@ export default function VendorDashboard() {
     );
   }
 
-  const vendor = getVendorByUserId(currentUser.id);
-  if (!vendor) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <AlertCircle size={48} className="mx-auto mb-6 text-crimson" />
-          <h1 className="text-display text-4xl mb-4">Vendor Not Found</h1>
-          <p className="text-muted-foreground mb-8">
-            Your vendor profile could not be located.
-          </p>
-          <Link to="/" className="btn-ink px-8 py-3 text-xs tracking-widest uppercase">
-            Go Home
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const vendor = getVendorByUserId(currentUser.id) || { id: currentUser.id, userId: currentUser.id, storeName: currentUser.vendorStore?.name || `${currentUser.firstName} ${currentUser.lastName}`, description: currentUser.vendorStore?.description || "", commission: currentUser.vendorStore?.commission || 15, joinedAt: currentUser.createdAt || new Date().toISOString(), totalSales: 0, totalEarnings: 0, pendingPayout: 0 };
 
-  const vendorProducts = useMemo(() => {
-    const baseProducts = allProducts.filter((p) => p.vendorId === vendor.id);
-    const existingIds = new Set(baseProducts.map((p) => p.id));
-    const added = vendorProductsList.filter((p) => !existingIds.has(p.id));
-    return [...baseProducts, ...added];
-  }, [vendorProductsList, vendor.id]);
+  const vendorProducts = vendorProductsList;
 
   const vendorOrders = getOrdersByVendor(vendor.id);
   const recentOrders = [...vendorOrders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
@@ -428,9 +451,9 @@ export default function VendorDashboard() {
     }
   };
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    updateProfile({
+    const changes = {
       firstName: profileForm.firstName,
       lastName: profileForm.lastName,
       email: profileForm.email,
@@ -440,26 +463,32 @@ export default function VendorDashboard() {
         name: profileForm.storeName,
         description: profileForm.storeDescription,
       },
-    });
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2500);
+    };
+    try {
+      const saved = await authApi.updateProfile(changes);
+      updateProfile({ ...saved, id: saved._id || saved.id });
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } catch (error) { alert(error.message || "Could not save your store profile."); }
   };
 
   const getStockForProduct = useCallback((product) => {
     if (localInventory[product.id]) {
       return localInventory[product.id];
     }
-    return product.stock || {};
+    return product.stock || Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock]));
   }, [localInventory]);
 
-  const handleLocalStockChange = (productId, size, qty) => {
-    setLocalInventory((prev) => ({
-      ...prev,
-      [productId]: {
-        ...getStockForProduct(vendorProducts.find((p) => p.id === productId)),
-        [size]: Math.max(0, parseInt(qty) || 0),
-      },
-    }));
+  const handleLocalStockChange = async (productId, size, qty) => {
+    const product = vendorProducts.find((item) => item.id === productId);
+    if (!product) return;
+    const stock = { ...getStockForProduct(product), [size]: Math.max(0, parseInt(qty) || 0) };
+    setLocalInventory((prev) => ({ ...prev, [productId]: stock }));
+    try {
+      const inventory = Object.entries(stock).map(([stockSize, value]) => ({ size: stockSize, stock: value }));
+      const savedInventory = await productsApi.updateStock(productId, inventory);
+      setVendorProductsList((prev) => prev.map((item) => item.id === productId ? { ...item, inventory: savedInventory, stock } : item));
+    } catch (error) { alert(error.message || "Could not save stock."); }
   };
 
   const handleNextStatus = (orderId, currentStatus) => {
@@ -538,39 +567,34 @@ export default function VendorDashboard() {
     setExpandedProduct(null);
   };
 
-  const handleSaveNewProduct = (product) => {
-    const productWithVendor = {
-      ...product,
-      vendorId: vendor.id,
-    };
-    if (editingProduct) {
-      setVendorProductsList((prev) =>
-        prev.map((p) => (p.id === editingProduct.id ? productWithVendor : p))
-      );
-    } else {
-      setVendorProductsList((prev) => [...prev, productWithVendor]);
-    }
-    setNewProductForm(false);
-    setEditingProduct(null);
+  const handleSaveNewProduct = async (product) => {
+    const inventory = Object.entries(product.stock || {}).map(([size, stock]) => ({ size, stock }));
+    const payload = { ...product, inventory };
+    try {
+      const saved = editingProduct
+        ? await productsApi.update(editingProduct.id, payload)
+        : await productsApi.create(payload);
+      const mapped = { ...saved, id: saved._id };
+      setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+      setNewProductForm(false);
+      setEditingProduct(null);
+    } catch (error) { alert(error.message || "Could not save product."); }
   };
 
-  const handleDeleteProduct = (product) => {
+  const handleDeleteProduct = async (product) => {
     if (!window.confirm(`Are you sure you want to delete "${product.name}"?`)) return;
-    setVendorProductsList((prev) => prev.filter((p) => p.id !== product.id));
+    try { await productsApi.delete(product.id); setVendorProductsList((prev) => prev.filter((p) => p.id !== product.id)); }
+    catch (error) { alert(error.message || "Could not delete product."); }
   };
 
-  const handleToggleRental = (productId) => {
-    setVendorProductsList((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        const toggled = !p.rentalAvailable;
-        return {
-          ...p,
-          rentalAvailable: toggled,
-          rentalPricePerDay: toggled ? p.rentalPricePerDay || 50 : 0,
-        };
-      })
-    );
+  const handleToggleRental = async (productId) => {
+    const product = vendorProductsList.find((item) => item.id === productId);
+    if (!product) return;
+    const changes = { rentalAvailable: !product.rentalAvailable, rentalPricePerDay: !product.rentalAvailable ? product.rentalPricePerDay || 50 : 0 };
+    try {
+      const saved = await productsApi.update(productId, changes);
+      setVendorProductsList((prev) => prev.map((item) => item.id === productId ? { ...saved, id: saved._id } : item));
+    } catch (error) { alert(error.message || "Could not update rental availability."); }
   };
 
   const handleExportReport = () => {
@@ -597,7 +621,8 @@ export default function VendorDashboard() {
   };
 
   const getInventoryStatus = (slug) => {
-    const stock = inventory[slug] || {};
+    const product = vendorProducts.find((item) => (item.slug || item.id) === slug);
+    const stock = product ? getStockForProduct(product) : inventory[slug] || {};
     const total = Object.values(stock).reduce((a, b) => a + b, 0);
     if (total === 0) return { label: "Out of Stock", color: "text-red-600", bg: "bg-red-50" };
     if (total < 15) return { label: "Low Stock", color: "text-amber-600", bg: "bg-amber-50" };
@@ -1922,6 +1947,21 @@ export default function VendorDashboard() {
     );
   };
 
+  const renderAds = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Promotion tools</p><h2 className="font-serif text-2xl text-foreground mt-1">Your advertisements</h2></div><button onClick={() => setShowAdForm((show) => !show)} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest"><Plus size={14} /> New Ad</button></div>
+      {showAdForm && <div className="bg-cream border border-border p-6 space-y-4"><div className="grid sm:grid-cols-2 gap-4">
+        <input value={adForm.title} onChange={(e) => setAdForm((form) => ({ ...form, title: e.target.value }))} placeholder="Advertisement title (required)" className="px-4 py-3 bg-background border border-border text-sm" />
+        <input value={adForm.subtitle} onChange={(e) => setAdForm((form) => ({ ...form, subtitle: e.target.value }))} placeholder="Offer subtitle (optional)" className="px-4 py-3 bg-background border border-border text-sm" />
+        <select value={adForm.type} onChange={(e) => setAdForm((form) => ({ ...form, type: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="slide">Homepage Slide</option><option value="banner">Banner</option><option value="sidebar">Sidebar</option></select>
+        <input type="file" accept="image/*" onChange={(e) => handleAdImage(e.target.files?.[0])} className="px-3 py-2 bg-background border border-border text-sm" required />
+        <input value={adForm.buttonText} onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))} placeholder="Button text" className="px-4 py-3 bg-background border border-border text-sm" />
+        <input value={adForm.link} onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))} placeholder="/collection" className="px-4 py-3 bg-background border border-border text-sm" />
+      </div>{adForm.image && <img src={adForm.image} alt="Advertisement preview" className="h-36 w-56 object-cover border border-border" />}<div className="flex gap-3"><button onClick={submitAd} disabled={!adForm.title.trim() || !adForm.image} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40">Create Ad</button><button onClick={() => setShowAdForm(false)} className="px-5 py-2.5 border border-border text-xs uppercase tracking-widest">Cancel</button></div></div>}
+      <div className="grid gap-4">{vendorAds.map((ad) => <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p></div><div className="flex gap-2"><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div></div>)}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
+    </div>
+  );
+
   const tabContent = {
     overview: renderOverview,
     products: renderProducts,
@@ -1931,6 +1971,7 @@ export default function VendorDashboard() {
     rentalOrders: renderRentalOrders,
     messages: renderMessages,
     earnings: renderEarnings,
+    ads: renderAds,
     withdrawals: renderWithdrawals,
     profile: renderProfile,
   };
