@@ -19,7 +19,7 @@ function generateToken(user) {
 
 router.post('/register', async (req, res) => {
   try {
-    const { firstName, lastName, email, password, phone } = req.body;
+    const { firstName, lastName, email, password, phone, role, vendorStore } = req.body;
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
@@ -29,11 +29,20 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    const userRole = (role === 'vendor') ? 'vendor' : 'customer';
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
+    const userData = {
       firstName, lastName, email, password: hashedPassword,
-      role: 'customer', phone: phone || null, addresses: [],
-    });
+      role: userRole, phone: phone || null, addresses: [],
+    };
+    if (userRole === 'vendor') {
+      userData.vendorStore = {
+        name: vendorStore?.name || `${firstName} ${lastName}`,
+        description: vendorStore?.description || '',
+        commission: vendorStore?.commission || 15,
+      };
+    }
+    const user = await User.create(userData);
 
     const token = generateToken(user);
     const { password: _, ...userObj } = user.toObject();
@@ -188,6 +197,166 @@ router.post('/register-vendor', authMiddleware, adminOnly, async (req, res) => {
 
     const { password: _, ...userObj } = user.toObject();
     res.status(201).json(userObj);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/users', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const users = await User.find().select('-password').lean();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password').lean();
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/register-customer', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, phone } = req.body;
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      firstName, lastName, email, password: hashedPassword,
+      role: 'customer', phone: phone || null, addresses: [],
+    });
+
+    const { password: _, ...userObj } = user.toObject();
+    res.status(201).json(userObj);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { firstName, lastName, email, role, phone, vendorStore } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (firstName !== undefined) user.firstName = firstName;
+    if (lastName !== undefined) user.lastName = lastName;
+    if (email !== undefined) user.email = email;
+    if (role !== undefined) user.role = role;
+    if (phone !== undefined) user.phone = phone;
+    if (vendorStore && user.role === 'vendor') {
+      user.vendorStore = {
+        ...user.vendorStore?.toObject?.(),
+        name: vendorStore.name ?? user.vendorStore?.name,
+        description: vendorStore.description ?? user.vendorStore?.description,
+        commission: vendorStore.commission ?? user.vendorStore?.commission,
+      };
+    }
+    await user.save();
+
+    const { password, ...userObj } = user.toObject();
+    res.json(userObj);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/users/:id/reset-password', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Both current and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Cannot delete admin users' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/account', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Admin accounts cannot be self-deleted' });
+    }
+
+    await User.findByIdAndDelete(req.user.id);
+    res.json({ message: 'Account deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

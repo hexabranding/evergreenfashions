@@ -21,5 +21,15 @@ export const authApi = {
   updateProfile: (data) => api.put("/auth/me", data),
   addAddress: (address) => api.post("/auth/me/addresses", address),
   removeAddress: (id) => api.delete(`/auth/me/addresses/${id}`),
+  changePassword: (data) => api.put("/auth/change-password", data),
+  deleteAccount: () => api.delete("/auth/account"),
   logout: () => setToken(null),
+  admin: {
+    getUsers: () => api.get("/auth/users"),
+    getUser: (id) => api.get(`/auth/users/${id}`),
+    createUser: (data) => api.post("/auth/register", data),
+    updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
+    resetPassword: (id, newPassword) => api.put(`/auth/users/${id}/reset-password`, { newPassword }),
+    deleteUser: (id) => api.delete(`/auth/users/${id}`),
+  },
 };

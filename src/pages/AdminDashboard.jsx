@@ -8,6 +8,7 @@ import AddProductForm from "@/components/AddProductForm";
 import OrderDetailPanel from "@/components/OrderDetailPanel";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
+import { authApi } from "@/api/auth";
 import {
   LayoutDashboard,
   Package,
@@ -56,6 +57,7 @@ import {
   Layers,
   MousePointerClick,
   User,
+  Lock,
 } from "lucide-react";
 
 const TABS = [
@@ -281,7 +283,7 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, confirmLabel 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { currentUser: user, users: authUsers, isAuthenticated } = useAuth();
-  const { orders: contextOrders, vendors: authVendors, updateOrderStatus, adminApiOrders, adminOrdersLoading, fetchAdminOrders, updateOrderStatusApi } = useOrders();
+  const { orders: contextOrders, vendors: authVendors, updateOrderStatus, adminApiOrders, adminOrdersLoading, fetchAdminOrders, updateOrderStatusApi, inspectOrder } = useOrders();
 
   const [users, setUsers] = useState(authUsers || []);
   const [vendors, setVendors] = useState(authVendors || []);
@@ -299,6 +301,8 @@ export default function AdminDashboard() {
     return merged;
   }, [contextOrders, adminApiOrders]);
 
+  const normalOrders = useMemo(() => orders.filter((o) => !o.rentalDetails), [orders]);
+  const rentalOrders = useMemo(() => orders.filter((o) => o.rentalDetails), [orders]);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -310,9 +314,11 @@ export default function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
+  const [resetPasswordUser, setResetPasswordUser] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({
-    firstName: "", lastName: "", email: "", password: "",
+    firstName: "", lastName: "", email: "", password: "", role: "vendor",
   });
   const [vendorSearch, setVendorSearch] = useState("");
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -322,6 +328,8 @@ export default function AdminDashboard() {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [editingVendor, setEditingVendor] = useState(null);
   const [editVendorForm, setEditVendorForm] = useState({ storeName: "", description: "", commission: 15 });
+  const [resetPasswordVendor, setResetPasswordVendor] = useState(null);
+  const [vendorNewPassword, setVendorNewPassword] = useState("");
   const [vendorDetailTab, setVendorDetailTab] = useState("info");
   const [categories, setCategories] = useState(MOCK_CATEGORIES);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -374,6 +382,39 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchAdminOrders();
+  }, []);
+
+  useEffect(() => {
+    authApi.admin.getUsers().then((data) => {
+      const mappedUsers = data.map((u) => ({
+        id: u._id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        role: u.role,
+        phone: u.phone || "",
+        createdAt: u.createdAt,
+        addresses: u.addresses || [],
+        vendorStore: u.vendorStore,
+      }));
+      setUsers(mappedUsers);
+      const vendorUsers = mappedUsers.filter((u) => u.role === "vendor");
+      setVendors(vendorUsers.map((u) => ({
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        storeName: u.vendorStore?.name || `${u.firstName} ${u.lastName}`,
+        description: u.vendorStore?.description || "",
+        commission: u.vendorStore?.commission || 15,
+        suspended: false,
+        totalProducts: 0,
+        totalSales: 0,
+        totalEarnings: 0,
+        pendingPayout: 0,
+        joinedAt: u.createdAt?.slice(0, 10) || "N/A",
+      })));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -538,7 +579,8 @@ export default function AdminDashboard() {
   };
 
   const banUser = (userId) => {
-    openConfirm("Ban User", "Are you sure you want to ban this user? They will be removed from the user list.", () => {
+    openConfirm("Ban User", "Are you sure you want to ban this user? They will be removed from the user list.", async () => {
+      try { await authApi.admin.deleteUser(userId); } catch {}
       setUsers((prev) => prev.filter((u) => u.id !== userId));
       setSelectedUser(null);
       closeConfirm();
@@ -550,7 +592,10 @@ export default function AdminDashboard() {
     setEditUserForm({ firstName: u.firstName || "", lastName: u.lastName || "", email: u.email || "", role: u.role || "customer" });
   };
 
-  const saveEditUser = () => {
+  const saveEditUser = async () => {
+    try {
+      await authApi.admin.updateUser(editingUser, editUserForm);
+    } catch {}
     setUsers((prev) => prev.map((u) =>
       u.id === editingUser ? { ...u, ...editUserForm } : u
     ));
@@ -577,7 +622,19 @@ export default function AdminDashboard() {
     setEditVendorForm({ storeName: v.storeName || v.name || "", description: v.description || "", commission: v.commission || 15 });
   };
 
-  const saveEditVendor = () => {
+  const saveEditVendor = async () => {
+    try {
+      await authApi.admin.updateUser(editingVendor, {
+        firstName: selectedVendor.firstName,
+        lastName: selectedVendor.lastName,
+        email: selectedVendor.email,
+        vendorStore: {
+          name: editVendorForm.storeName,
+          description: editVendorForm.description,
+          commission: editVendorForm.commission,
+        },
+      });
+    } catch {}
     setVendors((prev) => prev.map((v) =>
       v.id === editingVendor ? { ...v, ...editVendorForm } : v
     ));
@@ -589,19 +646,42 @@ export default function AdminDashboard() {
     setEditingVendor(null);
   };
 
+  const handleResetPassword = async (userId) => {
+    if (!newPassword || newPassword.length < 6) {
+      alert("Password must be at least 6 characters");
+      return;
+    }
+    try {
+      await authApi.admin.resetPassword(userId, newPassword);
+      alert("Password reset successfully");
+      setResetPasswordUser(null);
+      setNewPassword("");
+    } catch (err) {
+      alert(err.message || "Failed to reset password");
+    }
+  };
+
+  const handleResetVendorPassword = async (vendorId) => {
+    if (!vendorNewPassword || vendorNewPassword.length < 6) {
+      alert("Password must be at least 6 characters");
+      return;
+    }
+    try {
+      await authApi.admin.resetPassword(vendorId, vendorNewPassword);
+      alert("Password reset successfully");
+      setResetPasswordVendor(null);
+      setVendorNewPassword("");
+    } catch (err) {
+      alert(err.message || "Failed to reset password");
+    }
+  };
+
   const handleAddVendor = async () => {
     const { firstName, lastName, email, password } = newVendorForm;
     if (!firstName || !lastName || !email || !password) return;
 
     try {
-      const token = localStorage.getItem("evergreen_token");
-      const res = await fetch("http://localhost:5000/api/auth/register-vendor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ firstName, lastName, email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || "Failed to create vendor"); return; }
+      const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "vendor" });
 
       setVendors((prev) => [...prev, {
         id: data._id, firstName: data.firstName, lastName: data.lastName, email: data.email,
@@ -619,45 +699,54 @@ export default function AdminDashboard() {
   };
 
   const handleAddUser = async () => {
-    const { firstName, lastName, email, password } = newUserForm;
+    const { firstName, lastName, email, password, role } = newUserForm;
     if (!firstName || !lastName || !email || !password) return;
 
     try {
-      const token = localStorage.getItem("evergreen_token");
-      const res = await fetch("http://localhost:5000/api/auth/register-vendor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ firstName, lastName, email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || "Failed to create vendor"); return; }
+      if (role === "vendor") {
+        const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "vendor" });
 
-      const newUser = {
-        id: data._id,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
-        role: "vendor",
-        phone: null,
-        createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-        addresses: [],
-      };
+        const newUser = {
+          id: data._id,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          role: "vendor",
+          phone: null,
+          createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          addresses: [],
+        };
 
-      setVendors((prev) => [...prev, {
-        ...newUser,
-        storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
-        description: data.vendorStore?.description || "",
-        commission: data.vendorStore?.commission || 15,
-        suspended: false,
-        totalProducts: 0,
-        totalSales: 0,
-        totalEarnings: 0,
-        pendingPayout: 0,
-        joinedAt: newUser.createdAt,
-      }]);
+        setVendors((prev) => [...prev, {
+          ...newUser,
+          storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
+          description: data.vendorStore?.description || "",
+          commission: data.vendorStore?.commission || 15,
+          suspended: false,
+          totalProducts: 0,
+          totalSales: 0,
+          totalEarnings: 0,
+          pendingPayout: 0,
+          joinedAt: newUser.createdAt,
+        }]);
 
-      setUsers((prev) => [...prev, newUser]);
-      setNewUserForm({ firstName: "", lastName: "", email: "", password: "" });
+        setUsers((prev) => [...prev, newUser]);
+      } else {
+        const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "customer" });
+        const newUser = {
+          id: data._id,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          role: data.role,
+          phone: data.phone || null,
+          createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          addresses: data.addresses || [],
+        };
+        setUsers((prev) => [...prev, newUser]);
+      }
+
+      setNewUserForm({ firstName: "", lastName: "", email: "", password: "", role: "vendor" });
       setShowAddUser(false);
     } catch {
       alert("Failed to connect to server");
@@ -769,17 +858,18 @@ export default function AdminDashboard() {
   };
 
   const renderDashboard = () => {
-    const recentOrders = [...orders].reverse().slice(0, 8);
+    const recentOrders = [...normalOrders].reverse().slice(0, 8);
     return (
       <div className="space-y-8">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={DollarSign} label="Revenue" value={`$${(totalRevenue + totalRentalRevenue).toLocaleString()}`} change={12} changeType="up" index={0} />
-          <StatCard icon={ShoppingCart} label="Orders" value={orders.length} change={8} changeType="up" index={1} />
-          <StatCard icon={Store} label="Vendors" value={(vendors || []).length} index={2} />
-          <StatCard icon={Users} label="Users" value={(users || []).length} change={15} changeType="up" index={3} />
-          <StatCard icon={Package} label="Products" value={products.length} index={4} />
-          <StatCard icon={Repeat} label="Active Rentals" value={rentalProducts.filter((r) => r.activeRentals > 0).length} index={5} />
-          <StatCard icon={Megaphone} label="Active Ads" value={adStats.active} index={6} />
+          <StatCard icon={ShoppingCart} label="Orders" value={normalOrders.length} change={normalOrders.length - 8 > 0 ? 8 : 0} changeType="up" index={1} />
+          <StatCard icon={Repeat} label="Rental Orders" value={rentalOrders.length} change={15} changeType="up" index={2} />
+          <StatCard icon={Store} label="Vendors" value={(vendors || []).length} index={3} />
+          <StatCard icon={Users} label="Users" value={(users || []).length} change={15} changeType="up" index={4} />
+          <StatCard icon={Package} label="Products" value={products.length} index={5} />
+          <StatCard icon={Repeat} label="Active Rentals" value={rentalProducts.filter((r) => r.activeRentals > 0).length} index={6} />
+          <StatCard icon={Megaphone} label="Active Ads" value={adStats.active} index={7} />
         </div>
 
         <div className="bg-cream border border-border p-6">
@@ -911,7 +1001,7 @@ export default function AdminDashboard() {
           className="btn-ink px-5 py-3 text-xs tracking-widest uppercase flex items-center gap-2"
         >
           <Plus size={14} />
-          {showAddUser ? "Close" : "Add Vendor"}
+          {showAddUser ? "Close" : "Add User"}
         </button>
       </div>
 
@@ -924,8 +1014,19 @@ export default function AdminDashboard() {
             className="bg-cream border border-border overflow-hidden"
           >
             <div className="p-6 space-y-4">
-              <p className="eyebrow">Add New Vendor</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <p className="eyebrow">Add New User</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Role</label>
+                  <select
+                    value={newUserForm.role}
+                    onChange={(e) => setNewUserForm((p) => ({ ...p, role: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 appearance-none cursor-pointer"
+                  >
+                    <option value="customer">Customer</option>
+                    <option value="vendor">Vendor</option>
+                  </select>
+                </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">First Name</label>
                   <input type="text" value={newUserForm.firstName} onChange={(e) => setNewUserForm((p) => ({ ...p, firstName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
@@ -945,7 +1046,7 @@ export default function AdminDashboard() {
               </div>
               <div className="flex gap-3">
                 <button onClick={handleAddUser} disabled={!newUserForm.firstName || !newUserForm.lastName || !newUserForm.email || !newUserForm.password} className="btn-ink px-6 py-2.5 text-xs tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed">
-                  Create Vendor
+                  Create {newUserForm.role === "vendor" ? "Vendor" : "Customer"}
                 </button>
                 <button onClick={() => setShowAddUser(false)} className="px-6 py-2.5 text-xs tracking-widest uppercase border border-border text-foreground hover:bg-secondary transition-colors">
                   Cancel
@@ -1136,6 +1237,30 @@ export default function AdminDashboard() {
                         <span className="text-muted-foreground">Addresses</span>
                         <span className="text-foreground">{selectedUser.addresses?.length || 0}</span>
                       </div>
+                      {selectedUser.role === "customer" && (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Total Orders</span>
+                            <span className="text-foreground font-serif">{orders.filter((o) => o.userId === selectedUser.id || o.user === selectedUser.id).length}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Total Spent</span>
+                            <span className="text-foreground font-serif">${orders.filter((o) => o.userId === selectedUser.id || o.user === selectedUser.id).reduce((sum, o) => sum + (o.total || o.totalAmount || 0), 0).toLocaleString()}</span>
+                          </div>
+                        </>
+                      )}
+                      {selectedUser.role === "vendor" && (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Store Name</span>
+                            <span className="text-foreground">{selectedUser.vendorStore?.name || "N/A"}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Commission</span>
+                            <span className="text-foreground">{selectedUser.vendorStore?.commission || 15}%</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <div className="flex gap-3 pt-4 border-t border-border">
                       <button
@@ -1151,6 +1276,33 @@ export default function AdminDashboard() {
                         <Ban size={14} /> Ban User
                       </button>
                     </div>
+                    {resetPasswordUser === selectedUser.id ? (
+                      <div className="pt-4 border-t border-border space-y-3">
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-serif">Reset Password</p>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="New password (min 6 characters)"
+                          className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                        />
+                        <div className="flex gap-3">
+                          <button onClick={() => handleResetPassword(selectedUser.id)} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
+                            <Check size={14} /> Reset Password
+                          </button>
+                          <button onClick={() => { setResetPasswordUser(null); setNewPassword(""); }} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setResetPasswordUser(selectedUser.id); setNewPassword(""); }}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors mt-3"
+                      >
+                        <Lock size={14} /> Reset Password
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -1440,6 +1592,33 @@ export default function AdminDashboard() {
                               <Ban size={14} /> Ban Vendor
                             </button>
                           </div>
+                          {resetPasswordVendor === selectedVendor.id ? (
+                            <div className="pt-4 border-t border-border space-y-3">
+                              <p className="text-xs uppercase tracking-wider text-muted-foreground font-serif">Reset Vendor Password</p>
+                              <input
+                                type="password"
+                                value={vendorNewPassword}
+                                onChange={(e) => setVendorNewPassword(e.target.value)}
+                                placeholder="New password (min 6 characters)"
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                              />
+                              <div className="flex gap-3">
+                                <button onClick={() => handleResetVendorPassword(selectedVendor.id)} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
+                                  <Check size={14} /> Reset Password
+                                </button>
+                                <button onClick={() => { setResetPasswordVendor(null); setVendorNewPassword(""); }} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setResetPasswordVendor(selectedVendor.id); setVendorNewPassword(""); }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors mt-3"
+                            >
+                              <Lock size={14} /> Reset Vendor Password
+                            </button>
+                          )}
                         </div>
                       )}
                     </>
@@ -2432,6 +2611,7 @@ export default function AdminDashboard() {
   const renderOrders = () => {
     const orderStatusFilter = adminOrderStatusFilter;
     const filteredAdminOrders = orders.filter((o) => {
+      if (o.rentalDetails) return false;
       const matchesSearch =
         (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
         (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
@@ -2441,12 +2621,12 @@ export default function AdminDashboard() {
     const sortedAdminOrders = [...filteredAdminOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
     const orderStatusCounts = {
-      All: orders.length,
-      confirmed: orders.filter((o) => o.status === "confirmed").length,
-      preparing: orders.filter((o) => o.status === "preparing").length,
-      shipped: orders.filter((o) => o.status === "shipped").length,
-      delivered: orders.filter((o) => o.status === "delivered").length,
-      cancelled: orders.filter((o) => o.status === "cancelled").length,
+      All: filteredAdminOrders.length,
+      confirmed: filteredAdminOrders.filter((o) => o.status === "confirmed").length,
+      preparing: filteredAdminOrders.filter((o) => o.status === "preparing").length,
+      shipped: filteredAdminOrders.filter((o) => o.status === "shipped").length,
+      delivered: filteredAdminOrders.filter((o) => o.status === "delivered").length,
+      cancelled: filteredAdminOrders.filter((o) => o.status === "cancelled").length,
     };
 
     return (
@@ -2724,10 +2904,50 @@ export default function AdminDashboard() {
                                     </div>
                                   )}
                                 </div>
+                                <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                                  <div>
+                                    <p className="text-muted-foreground text-xs">Deposit</p>
+                                    <p className="text-foreground">${order.deposit || 100}</p>
+                                  </div>
+                                  {order.depositRefunded && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Deposit Refunded</p>
+                                      <p className="text-emerald-600 font-medium">${order.refundAmount}</p>
+                                    </div>
+                                  )}
+                                  {order.returnRequested && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Return Status</p>
+                                      <p className="text-amber-600 font-medium capitalize">{order.rentalStatus?.replace("_", " ") || "pending"}</p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
                             <OrderDetailPanel order={order} showCustomer={true} />
-                            <div className="flex gap-3 mt-4 pt-4 border-t border-border">
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
+                              {order.rentalDetails && order.returnRequested && order.inspectionStatus === "pending" && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "passed", ""); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Inspect – Pass
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "damaged", "Item damaged"); }}
+                                    className="text-xs bg-red-600 text-white px-3 py-2 rounded-sm hover:bg-red-700 transition-colors"
+                                  >
+                                    Inspect – Damaged
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "partial_refund", "Partial damage"); }}
+                                    className="text-xs bg-amber-600 text-white px-3 py-2 rounded-sm hover:bg-amber-700 transition-colors"
+                                  >
+                                    Inspect – Partial Refund
+                                  </button>
+                                </>
+                              )}
                               {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
                                 <button
                                   key={status}

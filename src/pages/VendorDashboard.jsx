@@ -356,11 +356,11 @@ export default function VendorDashboard() {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    // Admin and vendor campaigns use one shared advertising feed.
     adsApi.getAll().then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id || ad.id })))).catch(() => setVendorAds([]));
-    // Fetch vendor orders from backend API
     fetchVendorOrders();
-  }, [currentUser?.id]);
+    const interval = setInterval(() => fetchVendorOrders(), 15000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id, fetchVendorOrders]);
   useEffect(() => {
     if (!currentUser?.id) return;
     // Vendors use the same catalogue as the admin dashboard. Products created by an

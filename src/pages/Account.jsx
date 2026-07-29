@@ -13,10 +13,12 @@ import {
   Check,
   Star,
   Calendar,
+  Lock,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
+import { authApi } from "@/api/auth";
 import { parsePrice } from "@/data/products";
 
 const tabs = [
@@ -34,6 +36,11 @@ const statusColors = {
   delivered: "bg-emerald-100 text-emerald-700",
   returned: "bg-red-100 text-red-700",
   cancelled: "bg-gray-100 text-gray-700",
+  pending_return: "bg-amber-100 text-amber-700",
+  awaiting_inspection: "bg-yellow-100 text-yellow-700",
+  inspected: "bg-blue-100 text-blue-700",
+  deposit_refunded: "bg-emerald-100 text-emerald-700",
+  completed: "bg-gray-100 text-gray-700",
 };
 
 const statusSteps = ["confirmed", "preparing", "shipped", "delivered"];
@@ -57,7 +64,7 @@ const listItem = {
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
   const { wishlist, toggleWishlist, addToCart } = useCart();
-  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi } = useOrders();
+  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn } = useOrders();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("profile");
@@ -81,6 +88,14 @@ export default function Account() {
     country: "",
     isDefault: false,
   });
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
 
   useEffect(() => {
     if (!user) navigate("/login", { replace: true });
@@ -154,6 +169,39 @@ export default function Account() {
   const handleMoveToCart = (item) => {
     addToCart(item);
     toggleWishlist(item);
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      setPasswordError("Both current and new password are required");
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordError("New password must be at least 6 characters");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+
+    try {
+      await authApi.changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordSuccess("Password changed successfully");
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setTimeout(() => {
+        setShowPasswordChange(false);
+        setPasswordSuccess("");
+      }, 2000);
+    } catch (err) {
+      setPasswordError(err.message || "Failed to change password");
+    }
   };
 
   return (
@@ -302,6 +350,114 @@ export default function Account() {
                     </motion.div>
                   )}
                 </div>
+
+                <div className="mt-8">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="font-serif text-2xl text-foreground">Change Password</h2>
+                    <button
+                      onClick={() => { setShowPasswordChange(!showPasswordChange); setPasswordError(""); setPasswordSuccess(""); }}
+                      className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Lock size={14} />
+                      {showPasswordChange ? "Cancel" : "Change Password"}
+                    </button>
+                  </div>
+
+                  {showPasswordChange && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="bg-secondary rounded-sm p-6 sm:p-8 space-y-5"
+                    >
+                      {passwordError && (
+                        <div className="bg-crimson/10 border border-crimson/20 px-4 py-3 text-sm text-crimson">
+                          {passwordError}
+                        </div>
+                      )}
+                      {passwordSuccess && (
+                        <div className="bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
+                          {passwordSuccess}
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                          Current Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordForm.currentPassword}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                          className="w-full bg-background border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors"
+                          placeholder="Enter current password"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                          New Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordForm.newPassword}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                          className="w-full bg-background border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors"
+                          placeholder="Enter new password (min 6 characters)"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                          Confirm New Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordForm.confirmPassword}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                          className="w-full bg-background border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors"
+                          placeholder="Confirm new password"
+                        />
+                      </div>
+                      <button
+                        onClick={handlePasswordChange}
+                        className="btn-ink px-6 py-2 text-sm rounded-sm"
+                      >
+                        Update Password
+                      </button>
+                    </motion.div>
+                  )}
+                </div>
+
+                {(user.role === "vendor" || user.role === "admin") && (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="font-serif text-2xl text-foreground">Danger Zone</h2>
+                    </div>
+                    <div className="bg-crimson/5 border border-crimson/20 rounded-sm p-6 sm:p-8">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-serif text-lg text-foreground mb-1">Delete Account</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Permanently delete your account and all associated data. This action cannot be undone.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
+                              authApi.deleteAccount().then(() => {
+                                logout();
+                                navigate("/");
+                              }).catch(() => {
+                                alert("Failed to delete account");
+                              });
+                            }
+                          }}
+                          className="flex items-center gap-2 px-4 py-2.5 border border-crimson/30 text-crimson text-xs uppercase tracking-widest hover:bg-crimson/10 transition-colors whitespace-nowrap"
+                        >
+                          <Trash2 size={14} /> Delete Account
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -436,10 +592,16 @@ export default function Account() {
                                         Cancel Delivery
                                       </button>
                                     )}
-                                    {order.status === "delivered" && (
-                                      <button className="text-xs text-crimson hover:text-crimson/80 transition-colors underline">
+                                    {order.status === "delivered" && !order.returnRequested && (
+                                      <button
+                                        onClick={() => requestReturn(order.id)}
+                                        className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
+                                      >
                                         Request Return
                                       </button>
+                                    )}
+                                    {order.returnRequested && (
+                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Inspection</span>
                                     )}
                                   </div>
                                 </div>
@@ -550,6 +712,24 @@ export default function Account() {
                                         </div>
                                       )}
                                     </div>
+                                    <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                                      <div>
+                                        <p className="text-muted-foreground text-xs">Security Deposit</p>
+                                        <p className="text-foreground">{parsePrice(order.deposit || 100)}</p>
+                                      </div>
+                                      {order.depositRefunded && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Deposit Refunded</p>
+                                          <p className="text-emerald-600 font-medium">{parsePrice(order.refundAmount)}</p>
+                                        </div>
+                                      )}
+                                      {order.returnRequested && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Rental Status</p>
+                                          <p className="text-amber-600 font-medium capitalize">{order.rentalStatus?.replace("_", " ") || "pending_return"}</p>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
 
@@ -618,10 +798,16 @@ export default function Account() {
                                         Cancel Delivery
                                       </button>
                                     )}
-                                    {order.status === "delivered" && (
-                                      <button className="text-xs text-crimson hover:text-crimson/80 transition-colors underline">
+                                    {order.status === "delivered" && !order.returnRequested && (
+                                      <button
+                                        onClick={() => requestReturn(order.id)}
+                                        className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
+                                      >
                                         Request Return
                                       </button>
+                                    )}
+                                    {order.returnRequested && (
+                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Inspection</span>
                                     )}
                                   </div>
                                 </div>

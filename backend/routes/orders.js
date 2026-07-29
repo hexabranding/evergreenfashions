@@ -49,15 +49,30 @@ router.post('/', authMiddleware, async (req, res) => {
     const now = new Date().toISOString();
     const estimatedDelivery = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
+    let deposit = 0;
+    for (const item of items) {
+      if (item.isRental) {
+        const product = await Product.findById(item.productId).lean();
+        deposit += (product?.rentalDeposit || 100) * item.quantity;
+      }
+    }
+
+    const orderTotal = total + deposit;
+
     const order = await Order.create({
       userId: req.user.id,
       items: orderItems,
-      subtotal, discount, total,
+      subtotal,
+      deposit,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount,
+      total: orderTotal,
       coupon: coupon || null,
       shipping: shipping || {},
       payment: payment || {},
       status: 'confirmed',
-      estimatedDelivery,
+      rentalStatus: rentalDetails ? 'active' : 'active',
       rentalDetails: rentalDetails || null,
       timeline: [{ status: 'confirmed', date: now, description: 'Order placed successfully' }],
     });
@@ -104,7 +119,8 @@ router.get('/vendor', authMiddleware, vendorOnly, async (req, res) => {
       o.items.some((item) =>
         item.vendorId === req.user.id ||
         item.vendorId === 'ef-main' ||
-        vendorProductIds.has(item.productId)
+        vendorProductIds.has(item.productId) ||
+        (!item.vendorId && vendorProductIds.size > 0)
       )
     );
     res.json(result);
@@ -133,7 +149,9 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 
     const { status } = req.body;
     const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned'];
-    if (!validStatuses.includes(status)) {
+    const validRentalStatuses = ['active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
+    const allValid = [...validStatuses, ...validRentalStatuses];
+    if (!allValid.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
@@ -173,36 +191,92 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
   }
 });
 
-router.post('/:id/return', authMiddleware, async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+  router.post('/:id/return', authMiddleware, async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (order.userId !== req.user.id && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      if (order.status === 'returned') {
+        return res.status(400).json({ error: 'Order already returned' });
+      }
+
+      if (order.rentalDetails && order.status === 'delivered') {
+        order.returnRequested = true;
+        order.returnRequestedDate = new Date().toISOString();
+        order.rentalStatus = 'pending_return';
+        order.status = 'delivered';
+        order.timeline.push({ status: 'pending_return', date: new Date().toISOString(), description: 'Return requested by customer' });
+        await order.save();
+        return res.json(order.toObject());
+      }
+
+      for (const item of order.items) {
+        await Product.updateOne(
+          { _id: item.productId, 'inventory.size': item.size },
+          { $inc: { 'inventory.$.stock': item.quantity } }
+        );
+      }
+
+      order.status = 'returned';
+      order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return processed, inventory restored' });
+      await order.save();
+
+      res.json(order.toObject());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
+  });
 
-    if (order.userId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Not authorized' });
+  router.post('/:id/inspect', authMiddleware, adminOnly, async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (!order.rentalDetails || order.rentalStatus !== 'pending_return') {
+        return res.status(400).json({ error: 'Order is not awaiting inspection' });
+      }
+
+      const { inspectionStatus, notes } = req.body;
+      const validInspections = ['passed', 'damaged', 'partial_refund'];
+      if (!validInspections.includes(inspectionStatus)) {
+        return res.status(400).json({ error: 'Invalid inspection status' });
+      }
+
+      order.inspectionStatus = inspectionStatus;
+      order.inspectedBy = req.user.id;
+      order.inspectedAt = new Date().toISOString();
+      order.rentalStatus = inspectionStatus === 'passed' ? 'inspected' : 'awaiting_inspection';
+
+      if (inspectionStatus === 'passed') {
+        order.depositRefunded = true;
+        order.refundAmount = order.deposit;
+        order.rentalStatus = 'deposit_refunded';
+        order.timeline.push({ status: 'deposit_refunded', date: new Date().toISOString(), description: `Deposit of €${order.deposit} refunded` });
+      } else if (inspectionStatus === 'partial_refund') {
+        const refundAmount = Math.round(order.deposit * 0.5);
+        order.refundAmount = refundAmount;
+        order.depositRefunded = true;
+        order.rentalStatus = 'deposit_refunded';
+        order.timeline.push({ status: 'deposit_refunded', date: new Date().toISOString(), description: `Partial deposit refund of €${refundAmount} (damaged item)` });
+      } else {
+        order.timeline.push({ status: 'damaged', date: new Date().toISOString(), description: `Item damaged during return. ${notes || 'Deposit forfeited.'}` });
+      }
+
+      order.timeline.push({ status: 'inspected', date: new Date().toISOString(), description: `Inspection: ${inspectionStatus}` });
+      await order.save();
+
+      res.json(order.toObject());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
+  });
 
-    if (order.status === 'returned') {
-      return res.status(400).json({ error: 'Order already returned' });
-    }
-
-    for (const item of order.items) {
-      await Product.updateOne(
-        { _id: item.productId, 'inventory.size': item.size },
-        { $inc: { 'inventory.$.stock': item.quantity } }
-      );
-    }
-
-    order.status = 'returned';
-    order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return processed, inventory restored' });
-    await order.save();
-
-    res.json(order.toObject());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-export default router;
+  export default router;

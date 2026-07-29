@@ -84,19 +84,19 @@ export function OrdersProvider({ children }) {
   });
 
   useEffect(() => {
-    localStorage.setItem("ef_orders", JSON.stringify(orders));
+    try { localStorage.setItem("ef_orders", JSON.stringify(orders)); } catch (_e) { /* quota exceeded */ }
   }, [orders]);
 
   useEffect(() => {
-    localStorage.setItem("ef_inventory", JSON.stringify(inventory));
+    try { localStorage.setItem("ef_inventory", JSON.stringify(inventory)); } catch (_e) { /* quota exceeded */ }
   }, [inventory]);
 
   useEffect(() => {
-    localStorage.setItem("ef_vendors", JSON.stringify(vendors));
+    try { localStorage.setItem("ef_vendors", JSON.stringify(vendors)); } catch (_e) { /* quota exceeded */ }
   }, [vendors]);
 
   useEffect(() => {
-    localStorage.setItem("ef_reviews", JSON.stringify(reviews));
+    try { localStorage.setItem("ef_reviews", JSON.stringify(reviews)); } catch (_e) { /* quota exceeded */ }
   }, [reviews]);
 
   const getStock = useCallback(
@@ -136,14 +136,20 @@ export function OrdersProvider({ children }) {
     [inventory]
   );
 
-  const placeOrder = useCallback(
+const placeOrder = useCallback(
     (cartItems, shippingInfo, paymentMethod, userId, coupon, discount) => {
       const subtotal = cartItems.reduce(
         (sum, item) => sum + parseFloat(String(item.price).replace("€", "").replace(",", "")) * item.qty,
         0
       );
       const shipping = shippingInfo;
-      const total = Math.max(0, subtotal - (discount || 0));
+      let deposit = 0;
+      cartItems.forEach((item) => {
+        if (item.isRental && item.rentalDetails) {
+          deposit += 100 * item.qty;
+        }
+      });
+      const total = Math.max(0, subtotal - (discount || 0)) + deposit;
 
       const orderItems = cartItems.map((item) => ({
         productId: item.id || item.slug || item.name,
@@ -158,22 +164,37 @@ export function OrdersProvider({ children }) {
         rentalDetails: item.rentalDetails || null,
       }));
 
+      const hasRental = cartItems.some((item) => item.isRental);
+      const rentalDetails = hasRental
+        ? {
+            startDate: cartItems.find((i) => i.isRental)?.rentalDetails?.startDate || null,
+            endDate: cartItems.find((i) => i.isRental)?.rentalDetails?.endDate || null,
+            rentalDays: cartItems.find((i) => i.isRental)?.rentalDetails?.rentalDays || 0,
+            rentalPricePerDay: cartItems.find((i) => i.isRental)?.rentalDetails?.rentalPricePerDay || 0,
+            deposit,
+          }
+        : null;
+
       const now = new Date();
       const newOrder = {
         id: `EF-${Date.now()}`,
         items: orderItems,
         total,
         subtotal,
+        deposit,
+        depositRefunded: false,
+        refundAmount: 0,
         discount: discount || 0,
         coupon: coupon || null,
         shipping: shippingInfo,
         payment: { ...paymentMethod, method: paymentMethod?.method || "card" },
         status: "confirmed",
+        rentalStatus: hasRental ? "active" : "active",
+        rentalDetails,
         date: now.toISOString(),
         estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         userId,
         timeline: [{ status: "confirmed", date: now.toISOString() }],
-        rentalDetails: null,
       };
 
       orderItems.forEach((item) => {
@@ -198,7 +219,11 @@ export function OrdersProvider({ children }) {
   const getOrdersByVendor = useCallback(
     (vendorId) => {
       return orders.filter((o) =>
-        o.items.some((item) => item.vendorId === vendorId)
+        o.items.some((item) => {
+          if (item.vendorId === vendorId) return true;
+          if (item.vendorId === 'vendor-1' && vendorId === 'vendor-1') return true;
+          return false;
+        })
       );
     },
     [orders]
@@ -222,6 +247,19 @@ export function OrdersProvider({ children }) {
       setOrders((prev) =>
         prev.map((o) => {
           if (o.id !== orderId) return o;
+          if (o.rentalDetails) {
+            return {
+              ...o,
+              returnRequested: true,
+              returnRequestedDate: new Date().toISOString(),
+              rentalStatus: "pending_return",
+              status: "delivered",
+              timeline: [
+                ...o.timeline,
+                { status: "pending_return", date: new Date().toISOString(), description: "Return requested by customer" },
+              ],
+            };
+          }
           o.items.forEach((item) => {
             if (item.selectedSize) {
               restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
@@ -237,6 +275,107 @@ export function OrdersProvider({ children }) {
     },
     [restoreStock]
   );
+
+  const requestReturn = useCallback(async (orderId) => {
+    try {
+      await ordersApi.returnOrder(orderId);
+    } catch {
+      /* fallback: handled locally */
+    }
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId || !o.rentalDetails) return o;
+        return {
+          ...o,
+          returnRequested: true,
+          returnRequestedDate: new Date().toISOString(),
+          rentalStatus: "pending_return",
+          status: "delivered",
+          timeline: [
+            ...o.timeline,
+            { status: "pending_return", date: new Date().toISOString(), description: "Return requested by customer" },
+          ],
+        };
+      })
+    );
+  }, []);
+
+  const inspectOrder = useCallback((orderId, inspectionStatus, notes) => {
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        const deposit = o.deposit || 0;
+        let refundAmount = 0;
+        let depositRefunded = false;
+        let rentalStatus = "awaiting_inspection";
+        let timelineEntry = { status: "inspected", date: new Date().toISOString(), description: `Inspection: ${inspectionStatus}` };
+        if (inspectionStatus === "passed") {
+          refundAmount = deposit;
+          depositRefunded = true;
+          rentalStatus = "deposit_refunded";
+          timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Deposit of €${deposit} refunded` };
+        } else if (inspectionStatus === "partial_refund") {
+          refundAmount = Math.round(deposit * 0.5);
+          depositRefunded = true;
+          rentalStatus = "deposit_refunded";
+          timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Partial refund of €${refundAmount} (damaged item)` };
+        }
+        return {
+          ...o,
+          inspectionStatus,
+          inspectedBy: "admin",
+          inspectedAt: new Date().toISOString(),
+          rentalStatus,
+          depositRefunded,
+          refundAmount,
+          timeline: [...o.timeline, timelineEntry],
+        };
+      })
+    );
+  }, []);
+
+  const refundDeposit = useCallback(async (orderId, amount) => {
+    try {
+      await ordersApi.refundDeposit(orderId, amount);
+    } catch {
+      /* fallback handled locally */
+    }
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        return { ...o, depositRefunded: true, refundAmount: amount, rentalStatus: "deposit_refunded" };
+      })
+    );
+  }, []);
+
+  const rentalStatusSteps = [
+    { id: "confirmed", label: "Confirmed", icon: "✓" },
+    { id: "preparing", label: "Preparing", icon: "📦" },
+    { id: "shipped", label: "Shipped", icon: "🚚" },
+    { id: "delivered", label: "Delivered", icon: "📬" },
+    { id: "active", label: "Rental Active", icon: "🏠" },
+    { id: "pending_return", label: "Return Requested", icon: "↩️" },
+    { id: "awaiting_inspection", label: "Awaiting Inspection", icon: "🔍" },
+    { id: "inspected", label: "Inspected", icon: "✅" },
+    { id: "deposit_refunded", label: "Deposit Refunded", icon: "💰" },
+    { id: "completed", label: "Completed", icon: "🎉" },
+  ];
+
+  const updateRentalStatus = useCallback((orderId, newRentalStatus) => {
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        return {
+          ...o,
+          rentalStatus: newRentalStatus,
+          timeline: [
+            ...o.timeline,
+            { status: newRentalStatus, date: new Date().toISOString(), description: `Rental stage: ${newRentalStatus}` },
+          ],
+        };
+      })
+    );
+  }, []);
 
   const getVendorByUserId = useCallback(
     (userId) => {
@@ -409,6 +548,11 @@ export function OrdersProvider({ children }) {
         getOrdersByVendor,
         updateOrderStatus,
         returnOrder,
+        requestReturn,
+        inspectOrder,
+        refundDeposit,
+        rentalStatusSteps,
+        updateRentalStatus,
         getStock,
         updateStock,
         restoreStock,

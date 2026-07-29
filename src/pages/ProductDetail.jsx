@@ -5,6 +5,7 @@ import { Heart, Star, Truck, ShieldCheck, RotateCcw, ArrowLeft, Ruler, Calendar 
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import SizeGuide from "@/components/SizeGuide";
+import ImageZoom from "@/components/ImageZoom";
 import { allProducts, colorMap, parsePrice } from "@/data/products";
 import { useProducts } from "@/context/ProductContext";
 
@@ -115,7 +116,10 @@ export default function ProductDetail() {
           </div>
 
           {/* Main image */}
-          <div className="relative aspect-[3/4] bg-secondary overflow-hidden">
+          <div className="relative">
+            <div className="aspect-[3/4] bg-secondary">
+              <ImageZoom images={productImages} mainImage={mainImage} />
+            </div>
             <div className="absolute top-4 left-4 z-10 bg-background px-3 py-1.5 text-[10px] tracking-[0.2em] uppercase">
               {product.tag}
             </div>
@@ -125,15 +129,6 @@ export default function ProductDetail() {
             >
               <Heart className={`w-4 h-4 ${isWishlisted(product.name) ? "fill-crimson text-crimson" : ""}`} />
             </button>
-            <motion.img
-              key={mainImage}
-              src={productImages[mainImage]}
-              alt={product.name}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-              className="w-full h-full object-contain p-8"
-            />
           </div>
         </motion.div>
 

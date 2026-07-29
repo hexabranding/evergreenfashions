@@ -123,8 +123,17 @@ export default function Checkout() {
       cvv: "123",
       upiId: "demo@upi",
     });
-    setErrors({});
+setErrors({});
   };
+
+  const deposit = cartItems.reduce((sum, item) => {
+    if (item.isRental && item.rentalDetails) {
+      return sum + 100 * item.qty;
+    }
+    return sum;
+  }, 0);
+
+  const grandTotal = cartTotal + deposit;
 
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-12 min-h-[70vh]">
@@ -392,8 +401,8 @@ export default function Checkout() {
                   </div>
                 </div>
 
-                <button onClick={handlePlaceOrder} className="w-full bg-crimson text-cream py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-crimson/80 transition-colors">
-                  Place Order — {formatPrice(cartTotal)}
+                <button onClick={handlePlaceOrder} className="w-full bg-crimson text-cream py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-crimson/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  Place Order — {formatPrice(grandTotal)}
                 </button>
               </motion.div>
             )}
@@ -402,6 +411,7 @@ export default function Checkout() {
 
         {/* Sidebar */}
         <div className="border border-border p-8 h-fit sticky top-32">
+
           <h3 className="font-serif text-xl mb-6">Order Summary</h3>
           <div className="flex flex-col gap-3 mb-6">
             {cartItems.map((item) => (
@@ -430,9 +440,15 @@ export default function Checkout() {
                 <span>-{formatPrice(discount)}</span>
               </div>
             )}
+            {deposit > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Security Deposit (refundable)</span>
+                <span>{formatPrice(deposit)}</span>
+              </div>
+            )}
             <div className="flex justify-between font-serif text-lg mt-2 pt-2 border-t border-border">
               <span>Total</span>
-              <span>{formatPrice(cartTotal)}</span>
+              <span>{formatPrice(grandTotal)}</span>
             </div>
           </div>
         </div>

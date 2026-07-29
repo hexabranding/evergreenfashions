@@ -20,6 +20,7 @@ const productSchema = new mongoose.Schema({
   images: [{ type: String }],
   rentalAvailable: { type: Boolean, default: false },
   rentalPricePerDay: { type: Number, default: 0 },
+  rentalDeposit: { type: Number, default: 100 },
   inventory: [inventorySchema],
 }, { timestamps: true });
 

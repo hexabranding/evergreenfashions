@@ -112,7 +112,20 @@ export function AuthProvider({ children }) {
   }, [currentUser]);
 
   const register = useCallback(
-    ({ firstName, lastName, email, password, role = "customer" }) => {
+    async ({ firstName, lastName, email, password, role = "customer", vendorStore }) => {
+      try {
+        const result = await authApi.register({ firstName, lastName, email, password, role, vendorStore });
+        const apiUser = { ...result.user, id: result.user._id || result.user.id };
+        setCurrentUser(apiUser);
+        setUsers((previous) => {
+          const exists = previous.some((user) => user.id === apiUser.id);
+          return exists ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser];
+        });
+        return { success: true, error: null };
+      } catch {
+        // Fallback to local registration when backend is not running
+      }
+
       const exists = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
       if (exists) return { success: false, error: "Email already registered" };
 
