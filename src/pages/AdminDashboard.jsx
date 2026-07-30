@@ -874,16 +874,31 @@ export default function AdminDashboard({ isVendor }) {
 
   const handleSaveProduct = async (payload) => {
     try {
-      const inventory = Object.entries(payload.stock || {}).map(([size, stock]) => ({ size, stock }));
-      const dataToSave = { ...payload, inventory };
+      const inventory = Object.entries(payload.stock || {}).map(([size, stock]) => ({ size, stock: Number(stock) }));
+      const dataToSave = {
+        name: payload.name,
+        category: payload.category,
+        price: payload.price,
+        description: payload.description,
+        gender: payload.gender,
+        colors: payload.colors,
+        sizes: payload.sizes,
+        img: payload.img,
+        images: payload.images,
+        inventory,
+        rentalAvailable: payload.rentalAvailable,
+        rentalPricePerDay: payload.rentalPricePerDay,
+        rentalDeposit: payload.rentalDeposit,
+        vendorId: payload.vendorId,
+      };
       
       let saved;
       if (editingProduct) {
         saved = await productsApi.update(editingProduct.id, dataToSave);
-        setProducts((prev) => prev.map((product) => product.id === editingProduct.id ? { ...saved, id: saved._id || saved.id } : product));
+        setProducts((prev) => prev.map((product) => product.id === editingProduct.id ? { ...saved, id: saved._id || saved.id, stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])) } : product));
       } else {
         saved = await productsApi.create(dataToSave);
-        setProducts((prev) => [{ ...saved, id: saved._id || saved.id }, ...prev]);
+        setProducts((prev) => [{ ...saved, id: saved._id || saved.id, stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])) }, ...prev]);
       }
       setShowAddForm(false);
       setEditingProduct(null);

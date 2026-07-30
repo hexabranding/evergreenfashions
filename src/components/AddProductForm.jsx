@@ -53,6 +53,7 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
     gender: editProduct?.gender || "Womenswear",
     rentalAvailable: editProduct?.rentalAvailable || false,
     rentalPricePerDay: editProduct?.rentalPricePerDay || "",
+    rentalDeposit: editProduct?.rentalDeposit || "",
     sizes: editProduct?.sizes || [...DEFAULT_SIZES],
     sizePreset: "Standard",
     colors: editProduct?.colors || [],
@@ -80,8 +81,18 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
         images: [...prev.images, ...result.urls],
       }));
     } catch (err) {
-      console.error("Upload failed:", err);
-      alert("Image upload failed. Please try again.");
+      console.error("Server upload failed, using base64 fallback:", err);
+      files.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setImagePreviews((prev) => [...prev, ev.target.result]);
+          setForm((prev) => ({
+            ...prev,
+            images: [...prev.images, ev.target.result],
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -154,6 +165,8 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
     e.preventDefault();
     if (!form.name || !form.category || !form.price || form.images.length === 0) return;
 
+    const inventory = Object.entries(form.stock).map(([size, stock]) => ({ size, stock }));
+
     const product = {
       id: editProduct?.id || `product-${Date.now()}`,
       name: form.name,
@@ -164,8 +177,10 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
       colors: form.colors,
       sizes: form.sizes,
       stock: form.stock,
+      inventory,
       rentalAvailable: form.rentalAvailable,
       rentalPricePerDay: form.rentalAvailable ? parseFloat(form.rentalPricePerDay) || 0 : 0,
+      rentalDeposit: form.rentalAvailable ? parseFloat(form.rentalDeposit) || 100 : 100,
       images: form.images,
       img: form.images[0] || null,
       tag: form.category,
@@ -299,16 +314,29 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
               </label>
               <AnimatePresence>
                 {form.rentalAvailable && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-                    <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Rental Price per Day (€)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.rentalPricePerDay}
-                      onChange={(e) => setForm((p) => ({ ...p, rentalPricePerDay: e.target.value }))}
-                      className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
-                      placeholder="0"
-                    />
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-4">
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Rental Price per Day (€)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.rentalPricePerDay}
+                        onChange={(e) => setForm((p) => ({ ...p, rentalPricePerDay: e.target.value }))}
+                        className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Security Deposit (€)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.rentalDeposit}
+                        onChange={(e) => setForm((p) => ({ ...p, rentalDeposit: e.target.value }))}
+                        className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
+                        placeholder="100"
+                      />
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -353,7 +381,7 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
                 multiple
                 onChange={handleImageUpload}
                 className="hidden"

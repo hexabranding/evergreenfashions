@@ -598,13 +598,28 @@ export default function VendorDashboard() {
   };
 
   const handleSaveNewProduct = async (product) => {
-    const inventory = Object.entries(product.stock || {}).map(([size, stock]) => ({ size, stock }));
-    const payload = { ...product, inventory, vendorId: vendor.id || currentUser.id };
+    const inventory = Object.entries(product.stock || {}).map(([size, stock]) => ({ size, stock: Number(stock) }));
+    const payload = {
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      description: product.description,
+      gender: product.gender,
+      colors: product.colors,
+      sizes: product.sizes,
+      img: product.img,
+      images: product.images,
+      inventory,
+      rentalAvailable: product.rentalAvailable,
+      rentalPricePerDay: product.rentalPricePerDay,
+      rentalDeposit: product.rentalDeposit,
+      vendorId: vendor.id || currentUser.id,
+    };
     try {
       const saved = editingProduct
         ? await productsApi.update(editingProduct.id, payload)
         : await productsApi.create(payload);
-      const mapped = { ...saved, id: saved._id };
+      const mapped = { ...saved, id: saved._id, stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])) };
       setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
       setNewProductForm(false);
       setEditingProduct(null);

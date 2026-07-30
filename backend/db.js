@@ -22,16 +22,16 @@ const IMAGE_MAP = {
   'camel-trench': '/assets/dress-7.jpeg',
   'noir-blazer': '/assets/dress-8.jpeg',
   'sable-wrap-coat': '/assets/dress-10.jpeg',
-  'trench-italienne': '/assets/dress-6.jpg',
-  'silk-blouse-noir': '/assets/dress-7.jpeg',
-  'cashmere-wrap': '/assets/dress-8.jpeg',
-  'wool-trousers': '/assets/dress-10.jpeg',
-  'derby-leather': '/assets/dress-6.jpg',
-  'chelsea-suede': '/assets/dress-7.jpeg',
-  'loafer-patent': '/assets/dress-8.jpeg',
-  'stiletto-suede': '/assets/gress-9.jpeg',
-  'ankle-boot-leather': '/assets/dress-10.jpeg',
-  'strappy-heel': '/assets/dress-5.png',
+  'trench-italienne': '/assets/dress-hero.png',
+  'silk-blouse-noir': '/assets/dress-2.png',
+  'cashmere-wrap': '/assets/dress-3.png',
+  'wool-trousers': '/assets/dress-4.png',
+  'derby-leather': '/assets/dress-5.png',
+  'chelsea-suede': '/assets/gress-9.jpeg',
+  'loafer-patent': '/assets/dress-6.jpg',
+  'stiletto-suede': '/assets/dress-7.jpeg',
+  'ankle-boot-leather': '/assets/dress-8.jpeg',
+  'strappy-heel': '/assets/dress-10.jpeg',
 };
 
 export async function connectDB() {
@@ -53,7 +53,7 @@ export async function connectDB() {
     const products = await Product.find().lean();
     for (const p of products) {
       const correctImg = IMAGE_MAP[p._id];
-      if (correctImg && (!p.img || p.img === '/assets/dress-hero.png' || !p.images?.length)) {
+      if (correctImg) {
         await Product.findByIdAndUpdate(p._id, {
           $set: {
             img: correctImg,
@@ -115,16 +115,16 @@ export async function seedData() {
     { id: 'camel-trench', name: 'Camel Trench', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Camel', 'Sand'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A timeless camel trench coat in Italian wool-cashmere blend.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
     { id: 'noir-blazer', name: 'Noir Blazer', price: 780, category: 'Apparel', gender: 'Menswear', colors: ['Black', 'Navy'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Impeccably structured blazer in midnight black.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
     { id: 'sable-wrap-coat', name: 'Sable Wrap Coat', price: 1340, category: 'Apparel', gender: 'Menswear', colors: ['Brown', 'Espresso'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A sumptuous wrap coat in rich sable tones, double-faced cashmere.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
-    { id: 'trench-italienne', name: 'Trench Italienne', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Navy', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Italian-crafted trench in deep navy with refined detailing.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
-    { id: 'silk-blouse-noir', name: 'Silk Blouse Noir', price: 520, category: 'Apparel', gender: 'Womenswear', colors: ['Black', 'Ivory'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Flowing silk blouse in noir, a wardrobe essential.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
-    { id: 'cashmere-wrap', name: 'Cashmere Wrap', price: 890, category: 'Apparel', gender: 'Womenswear', colors: ['Camel', 'Dove'], sizes: ['One Size'], vendorId: 'vendor-1', description: 'Pure cashmere wrap in warm camel tones.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
-    { id: 'wool-trousers', name: 'Wool Trousers', price: 460, category: 'Apparel', gender: 'Womenswear', colors: ['Charcoal', 'Black'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Impeccably tailored wool trousers with a modern silhouette.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
-    { id: 'derby-leather', name: 'Derby Leather', price: 420, category: 'Shoes', gender: 'Menswear', colors: ['Black', 'Brown'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Hand-stitched leather derby shoes, Goodyear welted.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
-    { id: 'chelsea-suede', name: 'Chelsea Suede', price: 380, category: 'Shoes', gender: 'Menswear', colors: ['Sand', 'Espresso'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Refined Chelsea boots in premium suede.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
-    { id: 'loafer-patent', name: 'Loafer Patent', price: 350, category: 'Shoes', gender: 'Menswear', colors: ['Black'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Polished patent leather loafers for the distinguished gentleman.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
-    { id: 'stiletto-suede', name: 'Stiletto Suede', price: 480, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Nude'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Elegant stiletto heels in sumptuous suede.', img: '/assets/gress-9.jpeg', images: ['/assets/gress-9.jpeg'] },
-    { id: 'ankle-boot-leather', name: 'Ankle Boot Leather', price: 390, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Oxblood'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Structured ankle boots in premium leather.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
-    { id: 'strappy-heel', name: 'Strappy Heel', price: 340, category: 'Shoes', gender: 'Womenswear', colors: ['Gold', 'Champagne'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Delicate strappy heels in metallic gold.', img: '/assets/dress-5.png', images: ['/assets/dress-5.png'] },
+    { id: 'trench-italienne', name: 'Trench Italienne', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Navy', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Italian-crafted trench in deep navy with refined detailing.', img: '/assets/dress-hero.png', images: ['/assets/dress-hero.png'] },
+    { id: 'silk-blouse-noir', name: 'Silk Blouse Noir', price: 520, category: 'Apparel', gender: 'Womenswear', colors: ['Black', 'Ivory'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Flowing silk blouse in noir, a wardrobe essential.', img: '/assets/dress-2.png', images: ['/assets/dress-2.png'] },
+    { id: 'cashmere-wrap', name: 'Cashmere Wrap', price: 890, category: 'Apparel', gender: 'Womenswear', colors: ['Camel', 'Dove'], sizes: ['One Size'], vendorId: 'vendor-1', description: 'Pure cashmere wrap in warm camel tones.', img: '/assets/dress-3.png', images: ['/assets/dress-3.png'] },
+    { id: 'wool-trousers', name: 'Wool Trousers', price: 460, category: 'Apparel', gender: 'Womenswear', colors: ['Charcoal', 'Black'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Impeccably tailored wool trousers with a modern silhouette.', img: '/assets/dress-4.png', images: ['/assets/dress-4.png'] },
+    { id: 'derby-leather', name: 'Derby Leather', price: 420, category: 'Shoes', gender: 'Menswear', colors: ['Black', 'Brown'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Hand-stitched leather derby shoes, Goodyear welted.', img: '/assets/dress-5.png', images: ['/assets/dress-5.png'] },
+    { id: 'chelsea-suede', name: 'Chelsea Suede', price: 380, category: 'Shoes', gender: 'Menswear', colors: ['Sand', 'Espresso'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Refined Chelsea boots in premium suede.', img: '/assets/gress-9.jpeg', images: ['/assets/gress-9.jpeg'] },
+    { id: 'loafer-patent', name: 'Loafer Patent', price: 350, category: 'Shoes', gender: 'Menswear', colors: ['Black'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Polished patent leather loafers for the distinguished gentleman.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
+    { id: 'stiletto-suede', name: 'Stiletto Suede', price: 480, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Nude'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Elegant stiletto heels in sumptuous suede.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
+    { id: 'ankle-boot-leather', name: 'Ankle Boot Leather', price: 390, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Oxblood'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Structured ankle boots in premium leather.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
+    { id: 'strappy-heel', name: 'Strappy Heel', price: 340, category: 'Shoes', gender: 'Womenswear', colors: ['Gold', 'Champagne'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Delicate strappy heels in metallic gold.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
   ];
 
   for (const p of products) {
@@ -198,8 +198,8 @@ export async function seedData() {
       _id: 'order-2',
       userId: 'cust-1',
       items: [
-        { productId: 'noir-blazer', name: 'Noir Blazer', price: 780, quantity: 1, size: 'L', color: 'Black', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
-        { productId: 'wool-trousers', name: 'Wool Trousers', price: 460, quantity: 1, size: 'L', color: 'Charcoal', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+        { productId: 'noir-blazer', name: 'Noir Blazer', price: 780, quantity: 1, size: 'L', color: 'Black', img: '/assets/dress-8.jpeg', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+        { productId: 'wool-trousers', name: 'Wool Trousers', price: 460, quantity: 1, size: 'L', color: 'Charcoal', img: '/assets/dress-4.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
       ],
       subtotal: 1240,
       deposit: 0,
@@ -222,7 +222,7 @@ export async function seedData() {
       _id: 'order-3',
       userId: 'cust-1',
       items: [
-        { productId: 'stiletto-suede', name: 'Stiletto Suede', price: 480, quantity: 2, size: '38', color: 'Black', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+        { productId: 'stiletto-suede', name: 'Stiletto Suede', price: 480, quantity: 2, size: '38', color: 'Black', img: '/assets/dress-7.jpeg', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
       ],
       subtotal: 960,
       deposit: 0,

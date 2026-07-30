@@ -43,7 +43,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
 router.post('/', authMiddleware, vendorOnly, async (req, res) => {
   try {
-    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, images, inventory: requestedInventory, vendorId: bodyVendorId } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, rentalDeposit, images, inventory: requestedInventory, vendorId: bodyVendorId } = req.body;
 
     if (!name || price === undefined || price === null) {
       return res.status(400).json({ error: 'Name and price are required' });
@@ -56,7 +56,7 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
     if (existing) {
       id = `${slug}-${Date.now()}`;
     }
-    const inventory = Array.isArray(requestedInventory)
+    const inventory = Array.isArray(requestedInventory) && requestedInventory.length
       ? requestedInventory
       : (sizes || []).map((size) => ({ size, stock: 10 }));
 
@@ -64,8 +64,12 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
       _id: id, name, price, tag: category || '', category: category || '', gender: gender || 'Unisex',
       colors: colors || [], sizes: sizes || [], description: description || '',
       vendorId: (req.user.role === 'admin' && bodyVendorId) ? bodyVendorId : req.user.id,
-      img: img || images[0], images: images?.length ? images : [img],
-      rentalAvailable: !!rentalAvailable, rentalPricePerDay: rentalPricePerDay || 0, inventory,
+      img: img || (images?.length ? images[0] : '/assets/dress-hero.png'),
+      images: images?.length ? images : [img || '/assets/dress-hero.png'],
+      rentalAvailable: !!rentalAvailable,
+      rentalPricePerDay: rentalPricePerDay || 0,
+      rentalDeposit: rentalDeposit || 100,
+      inventory,
     });
 
     res.status(201).json(product.toObject());
@@ -81,7 +85,7 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const { name, price, category, gender, colors, sizes, description, img, images, rentalAvailable, rentalPricePerDay, vendorId, inventory } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, images, rentalAvailable, rentalPricePerDay, rentalDeposit, vendorId, inventory } = req.body;
 
     if (name !== undefined) product.name = name;
     if (price !== undefined) product.price = price;
@@ -94,6 +98,7 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
     if (images !== undefined) product.images = images;
     if (rentalAvailable !== undefined) product.rentalAvailable = rentalAvailable;
     if (rentalPricePerDay !== undefined) product.rentalPricePerDay = rentalPricePerDay;
+    if (rentalDeposit !== undefined) product.rentalDeposit = rentalDeposit;
     if (vendorId !== undefined) product.vendorId = vendorId;
     if (inventory !== undefined) product.inventory = inventory;
 
