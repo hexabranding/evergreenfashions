@@ -276,24 +276,36 @@ const placeOrder = useCallback(
     [restoreStock]
   );
 
-  const requestReturn = useCallback(async (orderId) => {
+  const requestReturn = useCallback(async (orderId, reason) => {
     try {
-      await ordersApi.returnOrder(orderId);
+      await ordersApi.returnOrder(orderId, reason);
     } catch {
       /* fallback: handled locally */
     }
     setOrders((prev) =>
       prev.map((o) => {
-        if (o.id !== orderId || !o.rentalDetails) return o;
+        if (o.id !== orderId) return o;
+        if (o.rentalDetails) {
+          return {
+            ...o,
+            returnRequested: true,
+            returnRequestedDate: new Date().toISOString(),
+            rentalStatus: "pending_return",
+            status: "delivered",
+            timeline: [
+              ...o.timeline,
+              { status: "pending_return", date: new Date().toISOString(), description: reason || "Return requested by customer" },
+            ],
+          };
+        }
         return {
           ...o,
           returnRequested: true,
           returnRequestedDate: new Date().toISOString(),
-          rentalStatus: "pending_return",
-          status: "delivered",
+          status: "return_requested",
           timeline: [
             ...o.timeline,
-            { status: "pending_return", date: new Date().toISOString(), description: "Return requested by customer" },
+            { status: "return_requested", date: new Date().toISOString(), description: reason || "Return requested by customer" },
           ],
         };
       })
@@ -347,6 +359,32 @@ const placeOrder = useCallback(
       })
     );
   }, []);
+
+  const confirmReturn = useCallback(async (orderId) => {
+    try {
+      await ordersApi.confirmReturn(orderId);
+    } catch {
+      /* fallback handled locally */
+    }
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        o.items.forEach((item) => {
+          if (item.selectedSize) {
+            restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
+          }
+        });
+        return {
+          ...o,
+          status: "returned",
+          timeline: [
+            ...o.timeline,
+            { status: "returned", date: new Date().toISOString(), description: "Return confirmed, inventory restored" },
+          ],
+        };
+      })
+    );
+  }, [restoreStock]);
 
   const rentalStatusSteps = [
     { id: "confirmed", label: "Confirmed", icon: "✓" },
@@ -527,6 +565,15 @@ const placeOrder = useCallback(
     updateOrderStatus(orderId, status);
   }, [updateOrderStatus]);
 
+  const updateRentalStatusApi = useCallback(async (orderId, rentalStatus) => {
+    try {
+      await ordersApi.updateRentalStatus(orderId, rentalStatus);
+    } catch {
+      // fallback: update locally
+    }
+    updateRentalStatus(orderId, rentalStatus);
+  }, [updateRentalStatus]);
+
   const cancelOrderApi = useCallback(async (orderId, reason) => {
     try {
       await ordersApi.cancelOrder(orderId, reason);
@@ -549,6 +596,7 @@ const placeOrder = useCallback(
         updateOrderStatus,
         returnOrder,
         requestReturn,
+        confirmReturn,
         inspectOrder,
         refundDeposit,
         rentalStatusSteps,
@@ -574,6 +622,7 @@ const placeOrder = useCallback(
         customerApiOrders,
         customerOrdersLoading,
         updateOrderStatusApi,
+        updateRentalStatusApi,
         cancelOrderApi,
       }}
     >

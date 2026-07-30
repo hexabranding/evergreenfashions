@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { adminOnly } from '../middleware/auth.js';
+import { adminOnly, vendorOnly } from '../middleware/auth.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'evergreen-fashion-secret-key-2026';
@@ -202,7 +202,7 @@ router.post('/register-vendor', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.get('/users', authMiddleware, adminOnly, async (req, res) => {
+router.get('/users', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const users = await User.find().select('-password').lean();
     res.json(users);
@@ -211,7 +211,7 @@ router.get('/users', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.get('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+router.get('/users/:id', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('-password').lean();
     if (!user) {
@@ -223,7 +223,7 @@ router.get('/users/:id', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.post('/register-customer', authMiddleware, adminOnly, async (req, res) => {
+router.post('/register-customer', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const { firstName, lastName, email, password, phone } = req.body;
     if (!firstName || !lastName || !email || !password) {
@@ -248,7 +248,7 @@ router.post('/register-customer', authMiddleware, adminOnly, async (req, res) =>
   }
 });
 
-router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+router.put('/users/:id', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const { firstName, lastName, email, role, phone, vendorStore } = req.body;
     const user = await User.findById(req.params.id);
@@ -278,7 +278,7 @@ router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.put('/users/:id/reset-password', authMiddleware, adminOnly, async (req, res) => {
+router.put('/users/:id/reset-password', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
@@ -328,7 +328,7 @@ router.put('/change-password', authMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+router.delete('/users/:id', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) {

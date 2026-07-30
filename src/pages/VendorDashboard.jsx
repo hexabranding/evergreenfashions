@@ -312,6 +312,10 @@ export default function VendorDashboard() {
     vendorOrdersLoading,
     fetchVendorOrders,
     updateOrderStatusApi,
+    updateRentalStatusApi,
+    rentalStatusSteps,
+    confirmReturn,
+    inspectOrder,
   } = useOrders();
   const navigate = useNavigate();
 
@@ -345,7 +349,7 @@ export default function VendorDashboard() {
   const [earningsPeriod, setEarningsPeriod] = useState("7months");
 
   const [newProductForm, setNewProductForm] = useState(false);
-  const [vendorProductsList, setVendorProductsList] = useState([]);
+  const [vendorProductsList, setVendorProductsList] = useState(allProducts);
   const [vendorAds, setVendorAds] = useState([]);
   const [showAdForm, setShowAdForm] = useState(false);
   const [adForm, setAdForm] = useState({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
@@ -353,6 +357,12 @@ export default function VendorDashboard() {
 
   const [localInventory, setLocalInventory] = useState({});
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [vendorOrderSearch, setVendorOrderSearch] = useState("");
+  const [vendorOrderStatusFilter, setVendorOrderStatusFilter] = useState("All");
+  const [vendorRentalOrderSearch, setVendorRentalOrderSearch] = useState("");
+  const [vendorRentalOrderStatusFilter, setVendorRentalOrderStatusFilter] = useState("All");
+  const [expandedVendorOrder, setExpandedVendorOrder] = useState(null);
+  const [expandedVendorRentalOrder, setExpandedVendorRentalOrder] = useState(null);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -434,11 +444,12 @@ export default function VendorDashboard() {
     }
     return merged;
   }, [localVendorOrders, vendorApiOrders]);
+  const normalOrders = useMemo(() => vendorOrders.filter((o) => !o.rentalDetails), [vendorOrders]);
   const rentalOrders = useMemo(() => vendorOrders.filter((o) => o.rentalDetails), [vendorOrders]);
-  const recentOrders = [...vendorOrders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+  const recentOrders = [...normalOrders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
   const filteredOrders = orderFilter === "all"
-    ? vendorOrders
-    : vendorOrders.filter((o) => o.status === orderFilter);
+    ? normalOrders
+    : normalOrders.filter((o) => o.status === orderFilter);
   const sortedFilteredOrders = [...filteredOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredRentalOrders = rentalFilter === "all"
@@ -447,7 +458,7 @@ export default function VendorDashboard() {
   const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const totalRevenue = vendor.totalEarnings;
-  const pendingOrders = vendorOrders.filter((o) => o.status !== "delivered" && o.status !== "returned").length;
+  const pendingOrders = normalOrders.filter((o) => o.status !== "delivered" && o.status !== "returned").length;
   const rentalProducts = vendorProducts.filter((p) => p.rentalAvailable);
   const unreadMessages = messages.filter((m) => !m.read).length;
 
@@ -519,11 +530,12 @@ export default function VendorDashboard() {
     }
   };
 
-  const handleNextRentalStatus = (orderId, currentStatus) => {
-    const idx = RENTAL_STATUS_FLOW.indexOf(currentStatus);
-    if (idx >= 0 && idx < RENTAL_STATUS_FLOW.length - 1) {
-      const nextStatus = RENTAL_STATUS_FLOW[idx + 1];
-      updateOrderStatusApi(orderId, nextStatus);
+  const handleNextRentalStatus = (orderId, currentRentalStatus) => {
+    const rentalStepIds = rentalStatusSteps.map((s) => s.id);
+    const idx = rentalStepIds.indexOf(currentRentalStatus);
+    if (idx >= 0 && idx < rentalStepIds.length - 1) {
+      const nextRentalStatus = rentalStepIds[idx + 1];
+      updateRentalStatusApi(orderId, nextRentalStatus);
     }
   };
 
@@ -587,7 +599,7 @@ export default function VendorDashboard() {
 
   const handleSaveNewProduct = async (product) => {
     const inventory = Object.entries(product.stock || {}).map(([size, stock]) => ({ size, stock }));
-    const payload = { ...product, inventory };
+    const payload = { ...product, inventory, vendorId: vendor.id || currentUser.id };
     try {
       const saved = editingProduct
         ? await productsApi.update(editingProduct.id, payload)
@@ -1168,249 +1180,452 @@ export default function VendorDashboard() {
     </div>
   );
 
-  const renderOrders = () => (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="eyebrow mr-4">Order Management</h2>
-        {["all", "confirmed", "preparing", "shipped", "delivered"].map((status) => (
-          <button
-            key={status}
-            onClick={() => setOrderFilter(status)}
-            className={`text-xs tracking-wider uppercase px-4 py-2 rounded-full border transition-colors ${
-              orderFilter === status
-                ? "bg-ink text-cream border-ink"
-                : "bg-transparent text-muted-foreground border-border/60 hover:border-ink/30"
-            }`}
+  const renderOrders = () => {
+    const filteredVendorOrders = vendorOrders.filter((o) => {
+      if (o.rentalDetails) return false;
+      const matchesSearch =
+        (o.id || "").toLowerCase().includes(vendorOrderSearch.toLowerCase()) ||
+        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorOrderSearch.toLowerCase());
+      const matchesStatus = vendorOrderStatusFilter === "All" || o.status === vendorOrderStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+    const sortedVendorOrders = [...filteredVendorOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    const vendorOrderStatusCounts = {
+      All: filteredVendorOrders.length,
+      confirmed: filteredVendorOrders.filter((o) => o.status === "confirmed").length,
+      preparing: filteredVendorOrders.filter((o) => o.status === "preparing").length,
+      shipped: filteredVendorOrders.filter((o) => o.status === "shipped").length,
+      delivered: filteredVendorOrders.filter((o) => o.status === "delivered").length,
+      return_requested: filteredVendorOrders.filter((o) => o.status === "return_requested").length,
+      cancelled: filteredVendorOrders.filter((o) => o.status === "cancelled").length,
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={ShoppingBag} label="Total Orders" value={vendorOrders.length} index={0} />
+          <StatCard icon={Clock} label="Pending" value={vendorOrderStatusCounts.confirmed + vendorOrderStatusCounts.preparing} index={1} />
+          <StatCard icon={Package} label="Shipped" value={vendorOrderStatusCounts.shipped} index={2} />
+          <StatCard icon={CheckCircle} label="Delivered" value={vendorOrderStatusCounts.delivered} index={3} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search orders by ID or customer name..."
+              value={vendorOrderSearch}
+              onChange={(e) => setVendorOrderSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
+            />
+          </div>
+          <select
+            value={vendorOrderStatusFilter}
+            onChange={(e) => setVendorOrderStatusFilter(e.target.value)}
+            className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
           >
-            {status}
-            {status !== "all" && (
-              <span className="ml-1.5 text-[10px]">
-                ({vendorOrders.filter((o) => o.status === status).length})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Total Orders</p>
-          <p className="text-display text-xl">{vendorOrders.length}</p>
+            {Object.keys(vendorOrderStatusCounts).map((s) => (
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
+            ))}
+          </select>
         </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Pending</p>
-          <p className="text-display text-xl text-amber-600">{vendorOrders.filter((o) => o.status === "confirmed" || o.status === "preparing").length}</p>
-        </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Shipped</p>
-          <p className="text-display text-xl text-indigo-600">{vendorOrders.filter((o) => o.status === "shipped").length}</p>
-        </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Delivered</p>
-          <p className="text-display text-xl text-emerald-600">{vendorOrders.filter((o) => o.status === "delivered").length}</p>
-        </div>
-      </div>
 
-      {vendorOrdersLoading && (
-        <div className="text-center py-4">
-          <p className="text-sm text-muted-foreground">Loading orders from server...</p>
-        </div>
-      )}
+        {vendorOrdersLoading && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">Loading orders from server...</p>
+          </div>
+        )}
 
-      {sortedFilteredOrders.length === 0 ? (
-        <EmptyState
-          icon={ShoppingBag}
-          title="No Orders Found"
-          description="No orders match the current filter."
-        />
-      ) : (
-        <div className="space-y-3">
-          {sortedFilteredOrders.map((order) => {
-            const nextStatus =
-              ORDER_STATUS_FLOW[ORDER_STATUS_FLOW.indexOf(order.status) + 1] || null;
-            const isExpanded = expandedOrder === order.id;
-
-            return (
-              <motion.div
-                key={order.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-secondary border border-border/60 rounded-sm p-5"
-              >
-                <div
-                  className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer"
-                  onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
-                >
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="font-medium text-foreground text-sm">{order.id}</span>
-                      <StatusBadge status={order.status} />
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(order.date || order.createdAt).toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                      {isExpanded ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
-                    </div>
-                    {order.shipping && (
-                      <p className="text-xs text-muted-foreground">
-                        {order.shipping.firstName} {order.shipping.lastName}
-                        {order.shipping.address ? `, ${order.shipping.address}` : ""}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {order.items.map((item, idx) => (
-                        <span
-                          key={idx}
-                          className="text-xs bg-cream px-2.5 py-1 rounded-sm text-ink"
-                        >
-                          {item.name} x {item.qty || item.quantity}
-                          {item.selectedSize || item.size ? ` (${item.selectedSize || item.size})` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 lg:flex-shrink-0">
-                    <p className="text-display text-xl">{parsePrice(order.total)}</p>
-                    {nextStatus && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleNextStatus(order.id, order.status);
-                        }}
-                        className="btn-ink px-4 py-2 text-xs tracking-widest uppercase whitespace-nowrap"
-                      >
-                        Mark as {nextStatus}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <AnimatePresence>
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="overflow-hidden"
+        <div className="bg-cream border border-border overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
+            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-2">Items</div>
+            <div className="col-span-2">Date</div>
+            <div className="col-span-1">Total</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-2">Actions</div>
+          </div>
+          <div className="divide-y divide-border">
+            <AnimatePresence>
+              {sortedVendorOrders.map((order, i) => {
+                const isExpanded = expandedVendorOrder === order.id;
+                return (
+                  <motion.div
+                    key={order.id}
+                    variants={fadeUp}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <div
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
+                      onClick={() => setExpandedVendorOrder(isExpanded ? null : order.id)}
                     >
-                      <OrderDetailPanel order={order} showCustomer={true} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })}
+                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">
+                        {new Date(order.date || order.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
+                      <div className="md:col-span-1"><StatusBadge status={order.status} /></div>
+                      <div className="md:col-span-2 flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedVendorOrder(isExpanded ? null : order.id); }}
+                          className="p-2 hover:bg-ink/5 rounded transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-4">
+                            <OrderDetailPanel order={order} showCustomer={true} />
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
+                              {order.status === "return_requested" && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                >
+                                  Confirm Return & Restore Inventory
+                                </button>
+                              )}
+                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                                <button
+                                  key={status}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateOrderStatusApi(order.id, status);
+                                    setExpandedVendorOrder(null);
+                                  }}
+                                  disabled={order.status === status}
+                                  className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                    order.status === status
+                                      ? "bg-ink/10 text-ink border border-ink/30"
+                                      : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                >
+                                  {status}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+            {sortedVendorOrders.length === 0 && (
+              <div className="px-6 py-12">
+                <EmptyState icon={ShoppingBag} title="No orders found" description="No orders match your search criteria." />
+              </div>
+            )}
+          </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
-  const renderRentalOrders = () => (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="eyebrow mr-4">Rental Orders</h2>
-        {["all", "pending", "approved", "active", "returned"].map((status) => (
-          <button
-            key={status}
-            onClick={() => setRentalFilter(status)}
-            className={`text-xs tracking-wider uppercase px-4 py-2 rounded-full border transition-colors ${
-              rentalFilter === status
-                ? "bg-ink text-cream border-ink"
-                : "bg-transparent text-muted-foreground border-border/60 hover:border-ink/30"
-            }`}
+  const renderRentalOrders = () => {
+    const filteredVendorRentalOrders = rentalOrders.filter((o) => {
+      const matchesSearch =
+        (o.id || "").toLowerCase().includes(vendorRentalOrderSearch.toLowerCase()) ||
+        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorRentalOrderSearch.toLowerCase());
+      const matchesStatus = vendorRentalOrderStatusFilter === "All" ||
+        o.status === vendorRentalOrderStatusFilter ||
+        o.rentalStatus === vendorRentalOrderStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+    const sortedVendorRentalOrders = [...filteredVendorRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    const vendorRentalStatusCounts = {
+      All: filteredVendorRentalOrders.length,
+      confirmed: filteredVendorRentalOrders.filter((o) => o.status === "confirmed").length,
+      preparing: filteredVendorRentalOrders.filter((o) => o.status === "preparing").length,
+      shipped: filteredVendorRentalOrders.filter((o) => o.status === "shipped").length,
+      delivered: filteredVendorRentalOrders.filter((o) => o.status === "delivered").length,
+      pending_return: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "pending_return").length,
+      awaiting_inspection: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "awaiting_inspection").length,
+      deposit_refunded: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "deposit_refunded").length,
+      cancelled: filteredVendorRentalOrders.filter((o) => o.status === "cancelled").length,
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={Repeat} label="Total Rental Orders" value={rentalOrders.length} index={0} />
+          <StatCard icon={Clock} label="Pending Return" value={vendorRentalStatusCounts.pending_return + vendorRentalStatusCounts.awaiting_inspection} index={1} />
+          <StatCard icon={Package} label="Shipped" value={vendorRentalStatusCounts.shipped} index={2} />
+          <StatCard icon={CheckCircle} label="Deposit Refunded" value={vendorRentalStatusCounts.deposit_refunded} index={3} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search rental orders by ID or customer name..."
+              value={vendorRentalOrderSearch}
+              onChange={(e) => setVendorRentalOrderSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
+            />
+          </div>
+          <select
+            value={vendorRentalOrderStatusFilter}
+            onChange={(e) => setVendorRentalOrderStatusFilter(e.target.value)}
+            className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
           >
-            {status}
-          </button>
-        ))}
+            {Object.keys(vendorRentalStatusCounts).map((s) => (
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
+            ))}
+          </select>
+        </div>
+
+        {vendorOrdersLoading && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">Loading rental orders from server...</p>
+          </div>
+        )}
+
+        <div className="bg-cream border border-border overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
+            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-2">Items</div>
+            <div className="col-span-2">Rental Period</div>
+            <div className="col-span-1">Total</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-2">Actions</div>
+          </div>
+          <div className="divide-y divide-border">
+            <AnimatePresence>
+              {sortedVendorRentalOrders.map((order, i) => {
+                const isExpanded = expandedVendorRentalOrder === order.id;
+                const rentalStepIds = rentalStatusSteps.map((s) => s.id);
+                const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
+                return (
+                  <motion.div
+                    key={order.id}
+                    variants={fadeUp}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <div
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
+                      onClick={() => setExpandedVendorRentalOrder(isExpanded ? null : order.id)}
+                    >
+                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
+                      <div className="md:col-span-2 text-sm text-muted-foreground">
+                        {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
+                        {order.rentalDetails?.endDate ? new Date(order.rentalDetails.endDate).toLocaleDateString() : "-"}
+                        {order.rentalDetails?.rentalDays ? ` (${order.rentalDetails.rentalDays}d)` : ""}
+                      </div>
+                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
+                      <div className="md:col-span-1"><StatusBadge status={order.rentalStatus || order.status} /></div>
+                      <div className="md:col-span-2 flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedVendorRentalOrder(isExpanded ? null : order.id); }}
+                          className="p-2 hover:bg-ink/5 rounded transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-4">
+                            {order.rentalDetails && (
+                              <div className="bg-background rounded-sm p-4 mb-4 border border-border">
+                                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Rental Details</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                  {order.rentalDetails.startDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Start Date</p>
+                                      <p className="text-foreground">{new Date(order.rentalDetails.startDate).toLocaleDateString()}</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.endDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">End Date</p>
+                                      <p className="text-foreground">{new Date(order.rentalDetails.endDate).toLocaleDateString()}</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.rentalDays && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Rental Days</p>
+                                      <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
+                                    </div>
+                                  )}
+                                  {order.rentalDetails.pricePerDay && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Price Per Day</p>
+                                      <p className="text-foreground">${order.rentalDetails.pricePerDay}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                                  <div>
+                                    <p className="text-muted-foreground text-xs">Deposit</p>
+                                    <p className="text-foreground">${order.deposit || 100}</p>
+                                  </div>
+                                  {order.depositRefunded && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Deposit Refunded</p>
+                                      <p className="text-emerald-600 font-medium">${order.refundAmount}</p>
+                                    </div>
+                                  )}
+                                  {order.returnRequested && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Return Status</p>
+                                      <p className="text-amber-600 font-medium capitalize">{order.rentalStatus?.replace("_", " ") || "pending"}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Rental Return Roadmap - 10 Step Lifecycle */}
+                            <div className="bg-background rounded-sm p-4 mb-4 border border-border">
+                              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Return Roadmap</p>
+                              <div className="flex items-center gap-0 overflow-x-auto pb-2">
+                                {rentalStatusSteps.map((step, idx) => {
+                                  const isCompleted = idx <= currentRentalStep;
+                                  const isCurrent = idx === currentRentalStep;
+                                  return (
+                                    <div key={step.id} className="flex-1 min-w-[70px] flex items-center">
+                                      <div className="flex flex-col items-center flex-shrink-0">
+                                        <div
+                                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors ${
+                                            isCompleted
+                                              ? "bg-ink text-cream"
+                                              : isCurrent
+                                              ? "bg-ink/20 text-ink border-2 border-ink"
+                                              : "bg-border text-muted-foreground"
+                                          }`}
+                                        >
+                                          {isCompleted ? <Check className="w-3 h-3" /> : step.icon}
+                                        </div>
+                                        <span className={`text-[9px] mt-1 text-center leading-tight hidden sm:block ${isCurrent ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                                          {step.label}
+                                        </span>
+                                      </div>
+                                      {idx < rentalStatusSteps.length - 1 && (
+                                        <div
+                                          className={`flex-1 h-px mx-0.5 ${
+                                            idx < currentRentalStep ? "bg-ink" : "bg-border"
+                                          }`}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <OrderDetailPanel order={order} showCustomer={true} />
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
+                              {order.rentalDetails && order.returnRequested && order.rentalStatus === "pending_return" && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "passed", ""); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Inspect – Pass
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "damaged", "Item damaged"); }}
+                                    className="text-xs bg-red-600 text-white px-3 py-2 rounded-sm hover:bg-red-700 transition-colors"
+                                  >
+                                    Inspect – Damaged
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "partial_refund", "Partial damage"); }}
+                                    className="text-xs bg-amber-600 text-white px-3 py-2 rounded-sm hover:bg-amber-700 transition-colors"
+                                  >
+                                    Inspect – Partial Refund
+                                  </button>
+                                </>
+                              )}
+                              {order.status === "return_requested" && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                >
+                                  Confirm Return & Restore Inventory
+                                </button>
+                              )}
+                              {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
+                                const currentRentalStepId = order.rentalStatus || order.status;
+                                const currentIdx = rentalStatusSteps.findIndex((s) => s.id === currentRentalStepId);
+                                const stepIdx = rentalStatusSteps.findIndex((s) => s.id === step.id);
+                                const isCurrentOrPast = stepIdx <= currentIdx;
+                                const isNext = stepIdx === currentIdx + 1;
+                                return (
+                                  <button
+                                    key={step.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isNext) handleNextRentalStatus(order.id, currentRentalStepId);
+                                    }}
+                                    disabled={!isNext}
+                                    className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                      isCurrentOrPast
+                                        ? "bg-ink/10 text-ink border border-ink/30"
+                                        : isNext
+                                        ? "border border-ink text-ink hover:bg-ink hover:text-cream"
+                                        : "border border-border text-muted-foreground"
+                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                  >
+                                    {step.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+            {sortedVendorRentalOrders.length === 0 && (
+              <div className="px-6 py-12">
+                <EmptyState icon={Repeat} title="No rental orders found" description="No rental orders match your search criteria." />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Total Rentals</p>
-          <p className="text-display text-xl">{rentalOrders.length}</p>
-        </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Active</p>
-          <p className="text-display text-xl text-purple-600">{rentalOrders.filter((o) => o.status === "active").length}</p>
-        </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Pending Approval</p>
-          <p className="text-display text-xl text-yellow-600">{rentalOrders.filter((o) => o.status === "pending").length}</p>
-        </div>
-        <div className="bg-secondary border border-border/60 rounded-sm p-4">
-          <p className="text-xs text-muted-foreground mb-1">Total Deposits</p>
-          <p className="text-display text-xl">{parsePrice(rentalOrders.reduce((sum, o) => sum + o.deposit, 0))}</p>
-        </div>
-      </div>
-
-      {sortedRentalOrders.length === 0 ? (
-        <EmptyState
-          icon={RefreshCw}
-          title="No Rental Orders"
-          description="No rental orders match the current filter."
-        />
-      ) : (
-        <div className="space-y-3">
-          {sortedRentalOrders.map((order) => {
-            const nextStatus =
-              RENTAL_STATUS_FLOW[RENTAL_STATUS_FLOW.indexOf(order.status) + 1] || null;
-
-            return (
-              <motion.div
-                key={order.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-secondary border border-border/60 rounded-sm p-5"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="font-medium text-foreground text-sm">{order.id}</span>
-                      <StatusBadge status={order.status} />
-                    </div>
-                    <p className="text-sm text-foreground">{order.customerName}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {order.items.map((item, idx) => (
-                        <span key={idx} className="text-xs bg-cream px-2.5 py-1 rounded-sm text-ink">
-                          {item.name} ({item.size}) — {item.rentalDays} days
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar size={12} />
-                        {new Date(order.rentalStart).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                        {" → "}
-                        {new Date(order.rentalEnd).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      </span>
-                      <span>Deposit: {parsePrice(order.deposit)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 lg:flex-shrink-0">
-                    <p className="text-display text-xl">{parsePrice(order.total)}</p>
-                    {nextStatus && (
-                      <button
-                        onClick={() => handleNextRentalStatus(order.id, order.status)}
-                        className="btn-ink px-4 py-2 text-xs tracking-widest uppercase whitespace-nowrap"
-                      >
-                        {nextStatus === "approved" ? "Approve" : `Mark ${nextStatus}`}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   const renderMessages = () => (
     <div className="space-y-6">

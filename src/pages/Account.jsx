@@ -36,6 +36,7 @@ const statusColors = {
   delivered: "bg-emerald-100 text-emerald-700",
   returned: "bg-red-100 text-red-700",
   cancelled: "bg-gray-100 text-gray-700",
+  return_requested: "bg-amber-100 text-amber-700",
   pending_return: "bg-amber-100 text-amber-700",
   awaiting_inspection: "bg-yellow-100 text-yellow-700",
   inspected: "bg-blue-100 text-blue-700",
@@ -64,7 +65,7 @@ const listItem = {
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
   const { wishlist, toggleWishlist, addToCart } = useCart();
-  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn } = useOrders();
+  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, rentalStatusSteps } = useOrders();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("profile");
@@ -96,6 +97,8 @@ export default function Account() {
   });
   const [passwordError, setPasswordError] = useState("");
   const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [returnOrderId, setReturnOrderId] = useState(null);
+  const [returnReason, setReturnReason] = useState("");
 
   useEffect(() => {
     if (!user) navigate("/login", { replace: true });
@@ -471,7 +474,7 @@ export default function Account() {
                 <div className="bg-secondary rounded-sm p-10 text-center">
                   <Package size={40} className="mx-auto text-muted-foreground mb-3" />
                   <p className="text-muted-foreground mb-4">No orders yet</p>
-                  <Link to="/shop" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
+                  <Link to="/collection" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
                     Start Shopping
                   </Link>
                 </div>
@@ -579,12 +582,38 @@ export default function Account() {
                                   ))}
                                 </div>
 
+                                {/* Timeline History */}
+                                {order.timeline && order.timeline.length > 0 && (
+                                  <div className="mb-6">
+                                    <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
+                                    <div className="space-y-4">
+                                      {order.timeline.map((event, idx) => (
+                                        <div key={idx} className="flex gap-4">
+                                          <div className="relative flex flex-col items-center">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
+                                            {idx !== order.timeline.length - 1 && (
+                                              <div className="w-px h-full bg-border absolute top-3.5" />
+                                            )}
+                                          </div>
+                                          <div>
+                                            <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
+                                            {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
+                                            <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                                              {new Date(event.date).toLocaleString()}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
                                   </p>
                                   <div className="flex items-center gap-3">
-                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && (
+                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && order.status !== "return_requested" && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); setCancelOrderId(order.id); setCancelReason(""); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
@@ -594,14 +623,14 @@ export default function Account() {
                                     )}
                                     {order.status === "delivered" && !order.returnRequested && (
                                       <button
-                                        onClick={() => requestReturn(order.id)}
+                                        onClick={(e) => { e.stopPropagation(); setReturnOrderId(order.id); setReturnReason(""); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
                                       >
                                         Request Return
                                       </button>
                                     )}
-                                    {order.returnRequested && (
-                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Inspection</span>
+                                    {order.status === "return_requested" && (
+                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Confirmation</span>
                                     )}
                                   </div>
                                 </div>
@@ -634,7 +663,8 @@ export default function Account() {
                 <motion.div variants={listStagger} initial="initial" animate="animate" className="space-y-4">
                   {rentalOrders.map((order) => {
                     const isExpanded = expandedOrder === order.id;
-                    const currentStep = statusSteps.indexOf(order.status);
+                    const rentalStepIds = rentalStatusSteps.map((s) => s.id);
+                    const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
                     return (
                       <motion.div
                         key={order.id}
@@ -650,8 +680,8 @@ export default function Account() {
                               <span className="text-sm font-medium text-foreground">
                                 Rental #{order.id}
                               </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusColors[order.status] || "bg-gray-100 text-gray-600"}`}>
-                                {order.status}
+                              <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusColors[order.rentalStatus || order.status] || "bg-gray-100 text-gray-600"}`}>
+                                {(order.rentalStatus || order.status)?.replace("_", " ")}
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -733,33 +763,42 @@ export default function Account() {
                                   </div>
                                 )}
 
-                                {/* Status Timeline */}
-                                <div className="flex items-center gap-0 mb-6">
-                                  {statusSteps.map((step, i) => (
-                                    <div key={step} className="flex-1 flex items-center">
-                                      <div className="flex flex-col items-center flex-shrink-0">
-                                        <div
-                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                                            i <= currentStep
-                                              ? "bg-ink text-cream"
-                                              : "bg-border text-muted-foreground"
-                                          }`}
-                                        >
-                                          {i <= currentStep ? <Check size={12} /> : i + 1}
+                                {/* Rental Return Roadmap - 10 Step Lifecycle */}
+                                <div className="mb-6">
+                                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Return Roadmap</p>
+                                  <div className="flex items-center gap-0 overflow-x-auto pb-2">
+                                    {rentalStatusSteps.map((step, i) => {
+                                      const isCompleted = i <= currentRentalStep;
+                                      const isCurrent = i === currentRentalStep;
+                                      return (
+                                        <div key={step.id} className="flex-1 min-w-[70px] flex items-center">
+                                          <div className="flex flex-col items-center flex-shrink-0">
+                                            <div
+                                              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors ${
+                                                isCompleted
+                                                  ? "bg-ink text-cream"
+                                                  : isCurrent
+                                                  ? "bg-ink/20 text-ink border-2 border-ink"
+                                                  : "bg-border text-muted-foreground"
+                                              }`}
+                                            >
+                                              {isCompleted ? <Check size={12} /> : step.icon}
+                                            </div>
+                                            <span className={`text-[9px] mt-1 text-center leading-tight hidden sm:block ${isCurrent ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                                              {step.label}
+                                            </span>
+                                          </div>
+                                          {i < rentalStatusSteps.length - 1 && (
+                                            <div
+                                              className={`flex-1 h-px mx-0.5 ${
+                                                i < currentRentalStep ? "bg-ink" : "bg-border"
+                                              }`}
+                                            />
+                                          )}
                                         </div>
-                                        <span className="text-[10px] mt-1 capitalize text-muted-foreground hidden sm:block">
-                                          {step}
-                                        </span>
-                                      </div>
-                                      {i < statusSteps.length - 1 && (
-                                        <div
-                                          className={`flex-1 h-px mx-1 ${
-                                            i < currentStep ? "bg-ink" : "bg-border"
-                                          }`}
-                                        />
-                                      )}
-                                    </div>
-                                  ))}
+                                      );
+                                    })}
+                                  </div>
                                 </div>
 
                                 {/* Order Items */}
@@ -785,6 +824,32 @@ export default function Account() {
                                   ))}
                                 </div>
 
+                                {/* Timeline History */}
+                                {order.timeline && order.timeline.length > 0 && (
+                                  <div className="mb-6">
+                                    <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
+                                    <div className="space-y-4">
+                                      {order.timeline.map((event, idx) => (
+                                        <div key={idx} className="flex gap-4">
+                                          <div className="relative flex flex-col items-center">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
+                                            {idx !== order.timeline.length - 1 && (
+                                              <div className="w-px h-full bg-border absolute top-3.5" />
+                                            )}
+                                          </div>
+                                          <div>
+                                            <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
+                                            {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
+                                            <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                                              {new Date(event.date).toLocaleString()}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
@@ -800,7 +865,7 @@ export default function Account() {
                                     )}
                                     {order.status === "delivered" && !order.returnRequested && (
                                       <button
-                                        onClick={() => requestReturn(order.id)}
+                                        onClick={(e) => { e.stopPropagation(); setReturnOrderId(order.id); setReturnReason(""); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
                                       >
                                         Request Return
@@ -1017,7 +1082,7 @@ export default function Account() {
                 <div className="bg-secondary rounded-sm p-10 text-center">
                   <Heart size={40} className="mx-auto text-muted-foreground mb-3" />
                   <p className="text-muted-foreground mb-4">Your wishlist is empty</p>
-                  <Link to="/shop" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
+                  <Link to="/collection" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
                     Browse Collection
                   </Link>
                 </div>
@@ -1123,6 +1188,59 @@ export default function Account() {
                   className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-crimson hover:bg-crimson/5 transition-colors border-l border-border"
                 >
                   Confirm Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Return Request Modal */}
+      <AnimatePresence>
+        {returnOrderId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4"
+            onClick={() => setReturnOrderId(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-background border border-border w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 space-y-4">
+                <h3 className="font-serif text-lg text-foreground">Request Return</h3>
+                <p className="text-sm text-muted-foreground">
+                  Please provide a reason for returning this order. Our team will review your request.
+                </p>
+                <textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="Reason for return..."
+                  rows={3}
+                  className="w-full bg-secondary border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors resize-none"
+                />
+              </div>
+              <div className="flex border-t border-border">
+                <button
+                  onClick={() => setReturnOrderId(null)}
+                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    requestReturn(returnOrderId, returnReason);
+                    setReturnOrderId(null);
+                    setReturnReason("");
+                  }}
+                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-crimson hover:bg-crimson/5 transition-colors border-l border-border"
+                >
+                  Confirm Return
                 </button>
               </div>
             </motion.div>

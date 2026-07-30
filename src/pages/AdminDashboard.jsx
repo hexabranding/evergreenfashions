@@ -60,20 +60,6 @@ import {
   Lock,
 } from "lucide-react";
 
-const TABS = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "orders", label: "Orders", icon: ShoppingCart },
-  { id: "rentalOrders", label: "Rental Orders", icon: Repeat },
-  { id: "users", label: "Users", icon: Users },
-  { id: "vendors", label: "Vendors", icon: Store },
-  { id: "products", label: "All Products", icon: Package },
-  { id: "rentals", label: "Rentals", icon: Repeat },
-  { id: "categories", label: "Categories", icon: Layers },
-  { id: "featured", label: "Featured", icon: Star },
-  { id: "ads", label: "Advertisements", icon: Megaphone },
-  { id: "reports", label: "Reports", icon: BarChart3 },
-];
-
 const MOCK_CATEGORIES = [
   { id: "cat-1", name: "Dresses", icon: "👗", productCount: 24, active: true },
   { id: "cat-2", name: "Outerwear", icon: "🧥", productCount: 18, active: true },
@@ -121,39 +107,6 @@ const MOCK_ADS = [
   },
 ];
 
-const MOCK_RENTAL_PRODUCTS = [
-  {
-    id: "rent-1",
-    name: "Silk Evening Gown",
-    vendor: "Atelier Paris",
-    pricePerDay: 95,
-    totalRentals: 18,
-    activeRentals: 3,
-    revenue: 3420,
-    status: "active",
-  },
-  {
-    id: "rent-2",
-    name: "Velvet Dinner Jacket",
-    vendor: "Atelier Paris",
-    pricePerDay: 75,
-    totalRentals: 12,
-    activeRentals: 1,
-    revenue: 2100,
-    status: "active",
-  },
-  {
-    id: "rent-3",
-    name: "Tulle Cocktail Dress",
-    vendor: "Atelier Paris",
-    pricePerDay: 60,
-    totalRentals: 8,
-    activeRentals: 0,
-    revenue: 960,
-    status: "paused",
-  },
-];
-
 const MONTHLY_DATA = [
   { month: "Jan", revenue: 12400, orders: 48, users: 12, vendors: 1 },
   { month: "Feb", revenue: 14200, orders: 56, users: 18, vendors: 1 },
@@ -184,6 +137,23 @@ const fadeUp = {
     transition: { delay: i * 0.05, duration: 0.4, ease: "easeOut" },
   }),
 };
+
+function isRentalOrder(order) {
+  return !!(order?.rentalDetails || order?.items?.some((item) => item.isRental));
+}
+
+function mapApiProduct(product, vendorNameById = {}) {
+  const id = product._id || product.id;
+  const inventory = product.inventory || [];
+  const totalStock = inventory.reduce((sum, row) => sum + (row.stock || 0), 0);
+  return {
+    ...product,
+    id,
+    vendor: product.vendor || vendorNameById[product.vendorId] || product.vendorId || "N/A",
+    stock: inventory.length ? totalStock : product.stock,
+    images: product.images?.length ? product.images : product.img ? [product.img] : [],
+  };
+}
 
 function StatCard({ icon: Icon, label, value, change, changeType, index }) {
   return (
@@ -280,29 +250,68 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, confirmLabel 
   );
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ isVendor }) {
   const navigate = useNavigate();
-  const { currentUser: user, users: authUsers, isAuthenticated } = useAuth();
-  const { orders: contextOrders, vendors: authVendors, updateOrderStatus, adminApiOrders, adminOrdersLoading, fetchAdminOrders, updateOrderStatusApi, inspectOrder } = useOrders();
+  const { currentUser, logout, updateVendorCommission, users: authUsers, isAuthenticated } = useAuth();
+  const {
+    orders: contextOrders,
+    vendors: authVendors,
+    updateOrderStatus,
+    adminApiOrders,
+    vendorApiOrders,
+    adminOrdersLoading,
+    vendorOrdersLoading,
+    fetchAdminOrders,
+    fetchVendorOrders,
+    updateOrderStatusApi,
+    updateRentalStatusApi,
+    inspectOrder,
+    rentalStatusSteps,
+    confirmReturn,
+  } = useOrders();
+
+  const isVendorPanel = isVendor || currentUser?.role === "vendor";
+
+  const TABS = useMemo(() => {
+    const tabs = [
+      { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+      { id: "users", label: "Users", icon: Users },
+      { id: "orders", label: "Orders", icon: ShoppingCart },
+      { id: "rentalOrders", label: "Rental Orders", icon: Repeat },
+      { id: "rentals", label: "Rentals", icon: Tag },
+      { id: "products", label: "Products", icon: Package },
+      { id: "reviews", label: "Reviews", icon: Star },
+      { id: "analytics", label: "Analytics", icon: BarChart3 },
+      { id: "ads", label: "Ads", icon: Image },
+    ];
+    if (currentUser?.role === "admin" && !isVendor) {
+      const productIdx = tabs.findIndex((t) => t.id === "products");
+      tabs.splice(productIdx, 0, { id: "vendors", label: "Vendors", icon: Store });
+    }
+    return tabs;
+  }, [currentUser, isVendor]);
 
   const [users, setUsers] = useState(authUsers || []);
   const [vendors, setVendors] = useState(authVendors || []);
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState(allProducts);
+
+  const panelApiOrders = isVendorPanel ? vendorApiOrders : adminApiOrders;
+  const ordersLoading = isVendorPanel ? vendorOrdersLoading : adminOrdersLoading;
 
   const orders = useMemo(() => {
     const merged = [...contextOrders];
     const seen = new Set(contextOrders.map((o) => o.id));
-    for (const o of adminApiOrders) {
+    for (const o of panelApiOrders) {
       if (!seen.has(o.id)) {
         merged.push(o);
         seen.add(o.id);
       }
     }
     return merged;
-  }, [contextOrders, adminApiOrders]);
+  }, [contextOrders, panelApiOrders]);
 
-  const normalOrders = useMemo(() => orders.filter((o) => !o.rentalDetails), [orders]);
-  const rentalOrders = useMemo(() => orders.filter((o) => o.rentalDetails), [orders]);
+  const normalOrders = useMemo(() => orders.filter((o) => !isRentalOrder(o)), [orders]);
+  const rentalOrders = useMemo(() => orders.filter((o) => isRentalOrder(o)), [orders]);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -335,7 +344,6 @@ export default function AdminDashboard() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingCategory, setEditingCategory] = useState(null);
   const [editCategoryName, setEditCategoryName] = useState("");
-  const [rentalProducts, setRentalProducts] = useState(MOCK_RENTAL_PRODUCTS);
   const [rentalFilter, setRentalFilter] = useState("All");
   const [rentalSearch, setRentalSearch] = useState("");
   const [selectedRental, setSelectedRental] = useState(null);
@@ -364,6 +372,30 @@ export default function AdminDashboard() {
   const [expandedAdminRentalOrder, setExpandedAdminRentalOrder] = useState(null);
   const [adminRentalOrderStatusFilter, setAdminRentalOrderStatusFilter] = useState("All");
 
+  const rentalProducts = useMemo(() => products
+    .filter((product) => product.rentalAvailable)
+    .map((product) => {
+      const bookings = rentalOrders.flatMap((order) => (order.items || []).filter(
+        (item) => (item.isRental || order.rentalDetails) && (item.productId === product.id || item.name === product.name)
+      ));
+      const activeRentals = rentalOrders.filter((order) =>
+        (order.items || []).some((item) => (item.isRental || order.rentalDetails) && (item.productId === product.id || item.name === product.name))
+        && !["completed", "cancelled", "deposit_refunded"].includes(order.rentalStatus)
+      ).length;
+
+      return {
+        ...product,
+        pricePerDay: Number(product.rentalPricePerDay || 0),
+        totalRentals: bookings.reduce((total, item) => total + (item.qty || item.quantity || 1), 0),
+        activeRentals,
+        revenue: bookings.reduce((total, item) => total
+          + Number(item.rentalDetails?.rentalPricePerDay || product.rentalPricePerDay || 0)
+            * (item.rentalDetails?.rentalDays || 1)
+            * (item.qty || item.quantity || 1), 0),
+        status: "active",
+      };
+    }), [products, rentalOrders]);
+
   useEffect(() => {
     setUsers(authUsers || []);
   }, [authUsers]);
@@ -377,12 +409,22 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    productsApi.getAll().then((data) => setProducts(data.map((product) => ({ ...product, id: product._id })))).catch(() => setProducts([]));
-  }, []);
+    const vendorNameById = Object.fromEntries(
+      (vendors || []).map((v) => [v.id, v.storeName || v.name || `${v.firstName || ""} ${v.lastName || ""}`.trim()])
+    );
+    productsApi
+      .getAll()
+      .then((data) => setProducts(data.map((product) => mapApiProduct(product, vendorNameById))))
+      .catch(() => setProducts(allProducts.map((product) => mapApiProduct(product, vendorNameById))));
+  }, [vendors]);
 
   useEffect(() => {
-    fetchAdminOrders();
-  }, []);
+    if (!currentUser?.id) return;
+    const loadOrders = isVendorPanel ? fetchVendorOrders : fetchAdminOrders;
+    loadOrders();
+    const interval = setInterval(loadOrders, 15000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id, isVendorPanel, fetchAdminOrders, fetchVendorOrders]);
 
   useEffect(() => {
     authApi.admin.getUsers().then((data) => {
@@ -418,14 +460,12 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role !== "admin") {
-      setAccessDenied(true);
-      const timer = setTimeout(() => navigate("/login"), 2000);
-      return () => clearTimeout(timer);
+    if (currentUser?.role !== "admin" && currentUser?.role !== "vendor") {
+      navigate("/");
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [currentUser, navigate]);
 
-  if (accessDenied || !isAuthenticated || user?.role !== "admin") {
+  if (accessDenied || !isAuthenticated || (currentUser?.role !== "admin" && currentUser?.role !== "vendor")) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <motion.div
@@ -814,10 +854,18 @@ export default function AdminDashboard() {
   };
 
   const saveEditRental = () => {
-    setRentalProducts((prev) => prev.map((r) =>
-      r.id === editingRental ? { ...r, ...editRentalForm } : r
-    ));
-    setEditingRental(null);
+    const product = products.find((item) => item.id === editingRental);
+    if (!product) return;
+
+    productsApi.update(editingRental, {
+      ...product,
+      name: editRentalForm.name,
+      rentalPricePerDay: Number(editRentalForm.pricePerDay) || 0,
+      rentalAvailable: editRentalForm.status === "active",
+    }).then((saved) => {
+      setProducts((prev) => prev.map((item) => item.id === editingRental ? mapApiProduct(saved) : item));
+      setEditingRental(null);
+    }).catch((error) => alert(error.message || "Could not update rental."));
   };
 
   const cancelEditRental = () => {
@@ -2610,7 +2658,7 @@ export default function AdminDashboard() {
 
   const renderOrders = () => {
     const orderStatusFilter = adminOrderStatusFilter;
-    const filteredAdminOrders = orders.filter((o) => {
+    const filteredAdminOrders = normalOrders.filter((o) => {
       if (o.rentalDetails) return false;
       const matchesSearch =
         (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
@@ -2626,6 +2674,7 @@ export default function AdminDashboard() {
       preparing: filteredAdminOrders.filter((o) => o.status === "preparing").length,
       shipped: filteredAdminOrders.filter((o) => o.status === "shipped").length,
       delivered: filteredAdminOrders.filter((o) => o.status === "delivered").length,
+      return_requested: filteredAdminOrders.filter((o) => o.status === "return_requested").length,
       cancelled: filteredAdminOrders.filter((o) => o.status === "cancelled").length,
     };
 
@@ -2722,7 +2771,15 @@ export default function AdminDashboard() {
                         >
                           <div className="px-6 pb-4">
                             <OrderDetailPanel order={order} showCustomer={true} />
-                            <div className="flex gap-3 mt-4 pt-4 border-t border-border">
+                            <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
+                              {order.status === "return_requested" && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                >
+                                  Confirm Return & Restore Inventory
+                                </button>
+                              )}
                               {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
                                 <button
                                   key={status}
@@ -2767,7 +2824,9 @@ export default function AdminDashboard() {
       const matchesSearch =
         (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
         (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
-      const matchesStatus = adminRentalOrderStatusFilter === "All" || o.status === adminRentalOrderStatusFilter;
+      const matchesStatus = adminRentalOrderStatusFilter === "All" || 
+        o.status === adminRentalOrderStatusFilter ||
+        o.rentalStatus === adminRentalOrderStatusFilter;
       return matchesSearch && matchesStatus;
     });
     const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
@@ -2778,6 +2837,9 @@ export default function AdminDashboard() {
       preparing: rentalOrders.filter((o) => o.status === "preparing").length,
       shipped: rentalOrders.filter((o) => o.status === "shipped").length,
       delivered: rentalOrders.filter((o) => o.status === "delivered").length,
+      pending_return: rentalOrders.filter((o) => o.rentalStatus === "pending_return").length,
+      awaiting_inspection: rentalOrders.filter((o) => o.rentalStatus === "awaiting_inspection").length,
+      deposit_refunded: rentalOrders.filter((o) => o.rentalStatus === "deposit_refunded").length,
       cancelled: rentalOrders.filter((o) => o.status === "cancelled").length,
     };
 
@@ -2785,9 +2847,9 @@ export default function AdminDashboard() {
       <div className="space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={Repeat} label="Total Rental Orders" value={rentalOrders.length} index={0} />
-          <StatCard icon={Clock} label="Pending" value={rentalStatusCounts.confirmed + rentalStatusCounts.preparing} index={1} />
+          <StatCard icon={Clock} label="Pending Return" value={rentalStatusCounts.pending_return + rentalStatusCounts.awaiting_inspection} index={1} />
           <StatCard icon={Package} label="Shipped" value={rentalStatusCounts.shipped} index={2} />
-          <StatCard icon={CheckCircle} label="Delivered" value={rentalStatusCounts.delivered} index={3} />
+          <StatCard icon={CheckCircle} label="Deposit Refunded" value={rentalStatusCounts.deposit_refunded} index={3} />
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4">
@@ -2807,7 +2869,7 @@ export default function AdminDashboard() {
             className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
           >
             {Object.keys(rentalStatusCounts).map((s) => (
-              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
             ))}
           </select>
         </div>
@@ -2832,6 +2894,8 @@ export default function AdminDashboard() {
             <AnimatePresence>
               {sortedRentalOrders.map((order, i) => {
                 const isExpanded = expandedAdminRentalOrder === order.id;
+                const rentalStepIds = rentalStatusSteps.map((s) => s.id);
+                const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
                 return (
                   <motion.div
                     key={order.id}
@@ -2853,7 +2917,7 @@ export default function AdminDashboard() {
                         {order.rentalDetails?.rentalDays ? ` (${order.rentalDetails.rentalDays}d)` : ""}
                       </div>
                       <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
-                      <div className="md:col-span-1"><StatusBadge status={order.status} /></div>
+                      <div className="md:col-span-1"><StatusBadge status={order.rentalStatus || order.status} /></div>
                       <div className="md:col-span-2 flex items-center gap-1">
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedAdminRentalOrder(isExpanded ? null : order.id); }}
@@ -2924,9 +2988,48 @@ export default function AdminDashboard() {
                                 </div>
                               </div>
                             )}
+
+                            {/* Rental Return Roadmap - 10 Step Lifecycle */}
+                            <div className="bg-background rounded-sm p-4 mb-4 border border-border">
+                              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Return Roadmap</p>
+                              <div className="flex items-center gap-0 overflow-x-auto pb-2">
+                                {rentalStatusSteps.map((step, idx) => {
+                                  const isCompleted = idx <= currentRentalStep;
+                                  const isCurrent = idx === currentRentalStep;
+                                  return (
+                                    <div key={step.id} className="flex-1 min-w-[70px] flex items-center">
+                                      <div className="flex flex-col items-center flex-shrink-0">
+                                        <div
+                                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors ${
+                                            isCompleted
+                                              ? "bg-ink text-cream"
+                                              : isCurrent
+                                              ? "bg-ink/20 text-ink border-2 border-ink"
+                                              : "bg-border text-muted-foreground"
+                                          }`}
+                                        >
+                                          {isCompleted ? <Check className="w-3 h-3" /> : step.icon}
+                                        </div>
+                                        <span className={`text-[9px] mt-1 text-center leading-tight hidden sm:block ${isCurrent ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                                          {step.label}
+                                        </span>
+                                      </div>
+                                      {idx < rentalStatusSteps.length - 1 && (
+                                        <div
+                                          className={`flex-1 h-px mx-0.5 ${
+                                            idx < currentRentalStep ? "bg-ink" : "bg-border"
+                                          }`}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
                             <OrderDetailPanel order={order} showCustomer={true} />
                             <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
-                              {order.rentalDetails && order.returnRequested && order.inspectionStatus === "pending" && (
+                              {order.rentalDetails && order.returnRequested && order.rentalStatus === "pending_return" && (
                                 <>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "passed", ""); }}
@@ -2948,24 +3051,43 @@ export default function AdminDashboard() {
                                   </button>
                                 </>
                               )}
-                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                              {order.status === "return_requested" && (
                                 <button
-                                  key={status}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateOrderStatusApi(order.id, status);
-                                    setExpandedAdminRentalOrder(null);
-                                  }}
-                                  disabled={order.status === status}
-                                  className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
-                                    order.status === status
-                                      ? "bg-ink/10 text-ink border border-ink/30"
-                                      : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
-                                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
                                 >
-                                  {status}
+                                  Confirm Return & Restore Inventory
                                 </button>
-                              ))}
+                              )}
+                              {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
+                                const currentRentalStepId = order.rentalStatus || order.status;
+                                const currentIdx = rentalStatusSteps.findIndex((s) => s.id === currentRentalStepId);
+                                const stepIdx = rentalStatusSteps.findIndex((s) => s.id === step.id);
+                                const isCurrentOrPast = stepIdx <= currentIdx;
+                                const isNext = stepIdx === currentIdx + 1;
+                                return (
+                                  <button
+                                    key={step.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isNext) {
+                                        updateRentalStatusApi(order.id, step.id);
+                                        setExpandedAdminRentalOrder(null);
+                                      }
+                                    }}
+                                    disabled={!isNext}
+                                    className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                      isCurrentOrPast
+                                        ? "bg-ink/10 text-ink border border-ink/30"
+                                        : isNext
+                                        ? "border border-ink text-ink hover:bg-ink hover:text-cream"
+                                        : "border border-border text-muted-foreground"
+                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                  >
+                                    {step.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         </motion.div>
@@ -3056,7 +3178,7 @@ export default function AdminDashboard() {
           <div className="pt-4 border-t border-border">
             <p className="text-xs text-muted-foreground">Signed in as</p>
             <p className="text-sm text-foreground font-serif truncate">
-              {user?.firstName ? `${user.firstName} ${user.lastName || ""}` : user?.email}
+              {currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}` : currentUser?.email}
             </p>
           </div>
         </aside>

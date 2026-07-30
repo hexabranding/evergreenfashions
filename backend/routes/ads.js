@@ -18,10 +18,7 @@ router.get('/', async (req, res) => {
 
 router.get('/vendor/:vendorId', authMiddleware, vendorOnly, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.id !== req.params.vendorId) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-    const ads = await Ad.find({ vendorId: req.params.vendorId }).sort({ createdAt: -1 }).lean();
+    const ads = await Ad.find().sort({ createdAt: -1 }).lean();
     res.json(ads);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -51,7 +48,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const ad = await Ad.findById(req.params.id);
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
 
-    if (req.user.role !== 'admin' && ad.vendorId !== req.user.id) {
+    if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
@@ -79,7 +76,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const ad = await Ad.findById(req.params.id);
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
 
-    if (req.user.role !== 'admin' && ad.vendorId !== req.user.id) {
+    if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
     }
 

@@ -31,14 +31,14 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.get('/:id/stats', vendorOnly, async (req, res) => {
+router.get('/:id/stats', authMiddleware, async (req, res) => {
   try {
-    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
     const products = await Product.find({ vendorId: req.params.id }).select('_id price').lean();
-    const productIds = products.map((p) => p._id);
+    const productIds = new Set(products.map((p) => String(p._id)));
     const totalProducts = products.length;
 
     let totalSales = 0;
@@ -47,11 +47,11 @@ router.get('/:id/stats', vendorOnly, async (req, res) => {
     const vendor = await User.findById(req.params.id).lean();
     const commission = vendor?.vendorStore?.commission || 15;
 
-    if (productIds.length > 0) {
+    if (productIds.size > 0) {
       const allOrders = await Order.find().lean();
       for (const order of allOrders) {
         for (const item of order.items) {
-          if (productIds.includes(item.productId)) {
+          if (productIds.has(String(item.productId))) {
             totalSales += item.quantity;
             totalRevenue += item.price * item.quantity;
           }
@@ -97,21 +97,21 @@ router.put('/:id/commission', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.post('/:id/payout', vendorOnly, async (req, res) => {
+router.post('/:id/payout', authMiddleware, async (req, res) => {
   try {
-    if (req.user.id !== req.params.id && req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
     const products = await Product.find({ vendorId: req.params.id }).select('_id price').lean();
-    const productIds = products.map((p) => p._id);
+    const productIds = new Set(products.map((p) => String(p._id)));
 
     let totalRevenue = 0;
-    if (productIds.length > 0) {
+    if (productIds.size > 0) {
       const allOrders = await Order.find().lean();
       for (const order of allOrders) {
         for (const item of order.items) {
-          if (productIds.includes(item.productId)) {
+          if (productIds.has(String(item.productId))) {
             totalRevenue += item.price * item.quantity;
           }
         }

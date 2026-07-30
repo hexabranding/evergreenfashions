@@ -37,6 +37,8 @@ router.post('/', authMiddleware, async (req, res) => {
         color: item.color,
         img: product.img,
         vendorId: product.vendorId,
+        isRental: !!item.isRental,
+        rentalDetails: item.rentalDetails || null,
       });
     }
 
@@ -110,20 +112,9 @@ router.get('/admin', authMiddleware, adminOnly, async (req, res) => {
 
 router.get('/vendor', authMiddleware, vendorOnly, async (req, res) => {
   try {
-    const allOrders = await Order.find().sort({ createdAt: -1 }).lean();
-    const vendorProducts = await Product.find({
-      $or: [{ vendorId: req.user.id }, { vendorId: 'ef-main' }]
-    }).select('_id').lean();
-    const vendorProductIds = new Set(vendorProducts.map((p) => p._id));
-    const result = allOrders.filter((o) =>
-      o.items.some((item) =>
-        item.vendorId === req.user.id ||
-        item.vendorId === 'ef-main' ||
-        vendorProductIds.has(item.productId) ||
-        (!item.vendorId && vendorProductIds.size > 0)
-      )
-    );
-    res.json(result);
+    const filter = req.user.role === 'admin' ? {} : { 'items.vendorId': req.user.id };
+    const orders = await Order.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -140,23 +131,28 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    if (req.user.role === 'vendor') {
-      const ownsItems = order.items.some((item) => item.vendorId === req.user.id || item.vendorId === 'ef-main');
-      if (!ownsItems) {
-        return res.status(403).json({ error: 'Not authorized' });
-      }
-    }
-
-    const { status } = req.body;
-    const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned'];
+    const { status, rentalStatus } = req.body;
+    const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'];
     const validRentalStatuses = ['active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
-    const allValid = [...validStatuses, ...validRentalStatuses];
-    if (!allValid.includes(status)) {
+
+    if (status && !validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    order.status = status;
-    order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+    if (rentalStatus && !validRentalStatuses.includes(rentalStatus)) {
+      return res.status(400).json({ error: 'Invalid rental status' });
+    }
+
+    if (status) {
+      order.status = status;
+      order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+    }
+
+    if (rentalStatus) {
+      order.rentalStatus = rentalStatus;
+      order.timeline.push({ status: rentalStatus, date: new Date().toISOString(), description: `Rental status: ${rentalStatus}` });
+    }
+
     await order.save();
 
     res.json(order.toObject());
@@ -202,18 +198,51 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized' });
       }
 
-      if (order.status === 'returned') {
-        return res.status(400).json({ error: 'Order already returned' });
+      if (order.status === 'returned' || order.status === 'return_requested') {
+        return res.status(400).json({ error: 'Order already returned or return requested' });
       }
 
-      if (order.rentalDetails && order.status === 'delivered') {
+      if (order.status !== 'delivered') {
+        return res.status(400).json({ error: 'Only delivered orders can be returned' });
+      }
+
+      const { reason } = req.body;
+
+      if (order.rentalDetails) {
         order.returnRequested = true;
         order.returnRequestedDate = new Date().toISOString();
         order.rentalStatus = 'pending_return';
         order.status = 'delivered';
-        order.timeline.push({ status: 'pending_return', date: new Date().toISOString(), description: 'Return requested by customer' });
+        order.timeline.push({ status: 'pending_return', date: new Date().toISOString(), description: reason || 'Return requested by customer' });
         await order.save();
         return res.json(order.toObject());
+      }
+
+      order.returnRequested = true;
+      order.returnRequestedDate = new Date().toISOString();
+      order.status = 'return_requested';
+      order.timeline.push({ status: 'return_requested', date: new Date().toISOString(), description: reason || 'Return requested by customer' });
+      await order.save();
+
+      res.json(order.toObject());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/:id/confirm-return', authMiddleware, async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      if (order.status !== 'return_requested') {
+        return res.status(400).json({ error: 'Order is not pending return confirmation' });
       }
 
       for (const item of order.items) {
@@ -224,7 +253,7 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
       }
 
       order.status = 'returned';
-      order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return processed, inventory restored' });
+      order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return confirmed, inventory restored' });
       await order.save();
 
       res.json(order.toObject());
@@ -233,11 +262,15 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
     }
   });
 
-  router.post('/:id/inspect', authMiddleware, adminOnly, async (req, res) => {
+  router.post('/:id/inspect', authMiddleware, async (req, res) => {
     try {
       const order = await Order.findById(req.params.id);
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
+        return res.status(403).json({ error: 'Not authorized' });
       }
 
       if (!order.rentalDetails || order.rentalStatus !== 'pending_return') {

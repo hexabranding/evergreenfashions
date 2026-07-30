@@ -57,7 +57,7 @@ export function CartProvider({ children }) {
   const [wishlist, setWishlist] = useState(() => loadState("ef_wishlist", []));
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [order, setOrder] = useState(null);
+  const [order, setOrder] = useState(() => loadState("ef_order", null));
   const [coupon, setCoupon] = useState(() => loadState("ef_coupon", null));
   const [couponError, setCouponError] = useState("");
 
@@ -75,6 +75,10 @@ export function CartProvider({ children }) {
     if (coupon) saveState("ef_coupon", coupon);
     else localStorage.removeItem("ef_coupon");
   }, [coupon]);
+
+  useEffect(() => {
+    if (order) saveState("ef_order", order);
+  }, [order]);
 
   const addToCart = useCallback((product) => {
     setCartItems((prev) => {
@@ -170,17 +174,29 @@ export function CartProvider({ children }) {
 
       // Also save to backend MongoDB
       try {
+        const hasRental = cartItems.some((item) => item.isRental);
         const backendItems = cartItems.map((item) => ({
           productId: item.id || item.slug || item.name,
           quantity: item.qty,
           size: item.selectedSize || null,
           color: item.selectedColor || null,
+          isRental: !!item.isRental,
+          rentalDetails: item.isRental ? item.rentalDetails : undefined,
         }));
+        const rentalDetails = hasRental
+          ? {
+              startDate: cartItems.find((i) => i.isRental)?.rentalDetails?.startDate || null,
+              endDate: cartItems.find((i) => i.isRental)?.rentalDetails?.endDate || null,
+              rentalDays: cartItems.find((i) => i.isRental)?.rentalDetails?.rentalDays || 0,
+              rentalPricePerDay: cartItems.find((i) => i.isRental)?.rentalDetails?.rentalPricePerDay || 0,
+            }
+          : null;
         ordersApi.create({
           items: backendItems,
           coupon: coupon || null,
           shipping: shippingInfo,
           payment: paymentMethod,
+          rentalDetails,
         }).catch(() => {});
       } catch {
         // Backend might be unreachable; local order is still saved

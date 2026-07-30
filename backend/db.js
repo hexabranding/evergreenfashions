@@ -11,6 +11,29 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 let connected = false;
 
+const IMAGE_MAP = {
+  'ecarlate-gown': '/assets/dress-hero.png',
+  'emeraude-gown': '/assets/dress-2.png',
+  'ivoire-draped': '/assets/dress-3.png',
+  'perle-chiffon': '/assets/dress-4.png',
+  'satin-ecarlate': '/assets/dress-5.png',
+  'chiffon-gress': '/assets/gress-9.jpeg',
+  'noir-silhouette': '/assets/dress-6.jpg',
+  'camel-trench': '/assets/dress-7.jpeg',
+  'noir-blazer': '/assets/dress-8.jpeg',
+  'sable-wrap-coat': '/assets/dress-10.jpeg',
+  'trench-italienne': '/assets/dress-6.jpg',
+  'silk-blouse-noir': '/assets/dress-7.jpeg',
+  'cashmere-wrap': '/assets/dress-8.jpeg',
+  'wool-trousers': '/assets/dress-10.jpeg',
+  'derby-leather': '/assets/dress-6.jpg',
+  'chelsea-suede': '/assets/dress-7.jpeg',
+  'loafer-patent': '/assets/dress-8.jpeg',
+  'stiletto-suede': '/assets/gress-9.jpeg',
+  'ankle-boot-leather': '/assets/dress-10.jpeg',
+  'strappy-heel': '/assets/dress-5.png',
+};
+
 export async function connectDB() {
   if (connected) return;
 
@@ -26,6 +49,20 @@ export async function connectDB() {
     await seedData();
   } else {
     await Product.updateMany({ vendorId: 'ef-main' }, { $set: { vendorId: 'vendor-1' } });
+
+    const products = await Product.find().lean();
+    for (const p of products) {
+      const correctImg = IMAGE_MAP[p._id];
+      if (correctImg && (!p.img || p.img === '/assets/dress-hero.png' || !p.images?.length)) {
+        await Product.findByIdAndUpdate(p._id, {
+          $set: {
+            img: correctImg,
+            images: [correctImg],
+          },
+        });
+      }
+    }
+    console.log('Product images migrated');
   }
 }
 
@@ -68,26 +105,26 @@ export async function seedData() {
   ]);
 
   const products = [
-    { id: 'ecarlate-gown', name: 'Écarlate Gown', price: 1290, category: 'Dresses', gender: 'Womenswear', colors: ['Red', 'Burgundy'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'A breathtaking floor-length gown in the deepest scarlet, crafted from flowing silk charmeuse.', rentalAvailable: true, rentalPricePerDay: 160 },
-    { id: 'emeraude-gown', name: 'Émeraude Gown', price: 1420, category: 'Dresses', gender: 'Womenswear', colors: ['Emerald', 'Sage'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'An emerald masterpiece inspired by the lush gardens of Versailles.', rentalAvailable: true, rentalPricePerDay: 180 },
-    { id: 'ivoire-draped', name: 'Ivoire Draped', price: 980, category: 'Dresses', gender: 'Womenswear', colors: ['Ivory', 'Cream', 'Nude'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Ethereal draped gown in pure ivory, a study in understated luxury.', rentalAvailable: true, rentalPricePerDay: 120 },
-    { id: 'perle-chiffon', name: 'Perle Chiffon', price: 1100, category: 'Dresses', gender: 'Womenswear', colors: ['Pearl', 'Champagne'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'A pearl-toned chiffon gown that captures light like morning dew.', rentalAvailable: true, rentalPricePerDay: 140 },
-    { id: 'satin-ecarlate', name: 'Satin Écarlate', price: 1290, category: 'Dresses', gender: 'Womenswear', colors: ['Red', 'Ruby'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Luxurious satin gown in vivid scarlet with architectural draping.', rentalAvailable: true, rentalPricePerDay: 160 },
-    { id: 'chiffon-gress', name: 'Chiffon Gress', price: 1100, category: 'Dresses', gender: 'Womenswear', colors: ['Blush', 'Dove'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Soft chiffon layers in delicate blush tones, perfect for garden parties.', rentalAvailable: true, rentalPricePerDay: 140 },
-    { id: 'noir-silhouette', name: 'Noir Silhouette', price: 890, category: 'Apparel', gender: 'Menswear', colors: ['Black', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'The quintessential black piece, tailored to perfection.' },
-    { id: 'camel-trench', name: 'Camel Trench', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Camel', 'Sand'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A timeless camel trench coat in Italian wool-cashmere blend.' },
-    { id: 'noir-blazer', name: 'Noir Blazer', price: 780, category: 'Apparel', gender: 'Menswear', colors: ['Black', 'Navy'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Impeccably structured blazer in midnight black.' },
-    { id: 'sable-wrap-coat', name: 'Sable Wrap Coat', price: 1340, category: 'Apparel', gender: 'Menswear', colors: ['Brown', 'Espresso'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A sumptuous wrap coat in rich sable tones, double-faced cashmere.' },
-    { id: 'trench-italienne', name: 'Trench Italienne', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Navy', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Italian-crafted trench in deep navy with refined detailing.' },
-    { id: 'silk-blouse-noir', name: 'Silk Blouse Noir', price: 520, category: 'Apparel', gender: 'Womenswear', colors: ['Black', 'Ivory'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Flowing silk blouse in noir, a wardrobe essential.' },
-    { id: 'cashmere-wrap', name: 'Cashmere Wrap', price: 890, category: 'Apparel', gender: 'Womenswear', colors: ['Camel', 'Dove'], sizes: ['One Size'], vendorId: 'vendor-1', description: 'Pure cashmere wrap in warm camel tones.' },
-    { id: 'wool-trousers', name: 'Wool Trousers', price: 460, category: 'Apparel', gender: 'Womenswear', colors: ['Charcoal', 'Black'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Impeccably tailored wool trousers with a modern silhouette.' },
-    { id: 'derby-leather', name: 'Derby Leather', price: 420, category: 'Shoes', gender: 'Menswear', colors: ['Black', 'Brown'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Hand-stitched leather derby shoes, Goodyear welted.' },
-    { id: 'chelsea-suede', name: 'Chelsea Suede', price: 380, category: 'Shoes', gender: 'Menswear', colors: ['Sand', 'Espresso'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Refined Chelsea boots in premium suede.' },
-    { id: 'loafer-patent', name: 'Loafer Patent', price: 350, category: 'Shoes', gender: 'Menswear', colors: ['Black'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Polished patent leather loafers for the distinguished gentleman.' },
-    { id: 'stiletto-suede', name: 'Stiletto Suede', price: 480, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Nude'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Elegant stiletto heels in sumptuous suede.' },
-    { id: 'ankle-boot-leather', name: 'Ankle Boot Leather', price: 390, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Oxblood'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Structured ankle boots in premium leather.' },
-    { id: 'strappy-heel', name: 'Strappy Heel', price: 340, category: 'Shoes', gender: 'Womenswear', colors: ['Gold', 'Champagne'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Delicate strappy heels in metallic gold.' },
+    { id: 'ecarlate-gown', name: 'Écarlate Gown', price: 1290, category: 'Dresses', gender: 'Womenswear', colors: ['Red', 'Burgundy'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'A breathtaking floor-length gown in the deepest scarlet, crafted from flowing silk charmeuse.', rentalAvailable: true, rentalPricePerDay: 160, img: '/assets/dress-hero.png', images: ['/assets/dress-hero.png'] },
+    { id: 'emeraude-gown', name: 'Émeraude Gown', price: 1420, category: 'Dresses', gender: 'Womenswear', colors: ['Emerald', 'Sage'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'An emerald masterpiece inspired by the lush gardens of Versailles.', rentalAvailable: true, rentalPricePerDay: 180, img: '/assets/dress-2.png', images: ['/assets/dress-2.png'] },
+    { id: 'ivoire-draped', name: 'Ivoire Draped', price: 980, category: 'Dresses', gender: 'Womenswear', colors: ['Ivory', 'Cream', 'Nude'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Ethereal draped gown in pure ivory, a study in understated luxury.', rentalAvailable: true, rentalPricePerDay: 120, img: '/assets/dress-3.png', images: ['/assets/dress-3.png'] },
+    { id: 'perle-chiffon', name: 'Perle Chiffon', price: 1100, category: 'Dresses', gender: 'Womenswear', colors: ['Pearl', 'Champagne'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'A pearl-toned chiffon gown that captures light like morning dew.', rentalAvailable: true, rentalPricePerDay: 140, img: '/assets/dress-4.png', images: ['/assets/dress-4.png'] },
+    { id: 'satin-ecarlate', name: 'Satin Écarlate', price: 1290, category: 'Dresses', gender: 'Womenswear', colors: ['Red', 'Ruby'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Luxurious satin gown in vivid scarlet with architectural draping.', rentalAvailable: true, rentalPricePerDay: 160, img: '/assets/dress-5.png', images: ['/assets/dress-5.png'] },
+    { id: 'chiffon-gress', name: 'Chiffon Gress', price: 1100, category: 'Dresses', gender: 'Womenswear', colors: ['Blush', 'Dove'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Soft chiffon layers in delicate blush tones, perfect for garden parties.', rentalAvailable: true, rentalPricePerDay: 140, img: '/assets/gress-9.jpeg', images: ['/assets/gress-9.jpeg'] },
+    { id: 'noir-silhouette', name: 'Noir Silhouette', price: 890, category: 'Apparel', gender: 'Menswear', colors: ['Black', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'The quintessential black piece, tailored to perfection.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
+    { id: 'camel-trench', name: 'Camel Trench', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Camel', 'Sand'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A timeless camel trench coat in Italian wool-cashmere blend.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
+    { id: 'noir-blazer', name: 'Noir Blazer', price: 780, category: 'Apparel', gender: 'Menswear', colors: ['Black', 'Navy'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Impeccably structured blazer in midnight black.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
+    { id: 'sable-wrap-coat', name: 'Sable Wrap Coat', price: 1340, category: 'Apparel', gender: 'Menswear', colors: ['Brown', 'Espresso'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'A sumptuous wrap coat in rich sable tones, double-faced cashmere.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
+    { id: 'trench-italienne', name: 'Trench Italienne', price: 1150, category: 'Apparel', gender: 'Menswear', colors: ['Navy', 'Charcoal'], sizes: ['S', 'M', 'L', 'XL', 'XXL'], vendorId: 'vendor-1', description: 'Italian-crafted trench in deep navy with refined detailing.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
+    { id: 'silk-blouse-noir', name: 'Silk Blouse Noir', price: 520, category: 'Apparel', gender: 'Womenswear', colors: ['Black', 'Ivory'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Flowing silk blouse in noir, a wardrobe essential.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
+    { id: 'cashmere-wrap', name: 'Cashmere Wrap', price: 890, category: 'Apparel', gender: 'Womenswear', colors: ['Camel', 'Dove'], sizes: ['One Size'], vendorId: 'vendor-1', description: 'Pure cashmere wrap in warm camel tones.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
+    { id: 'wool-trousers', name: 'Wool Trousers', price: 460, category: 'Apparel', gender: 'Womenswear', colors: ['Charcoal', 'Black'], sizes: ['XS', 'S', 'M', 'L', 'XL'], vendorId: 'vendor-1', description: 'Impeccably tailored wool trousers with a modern silhouette.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
+    { id: 'derby-leather', name: 'Derby Leather', price: 420, category: 'Shoes', gender: 'Menswear', colors: ['Black', 'Brown'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Hand-stitched leather derby shoes, Goodyear welted.', img: '/assets/dress-6.jpg', images: ['/assets/dress-6.jpg'] },
+    { id: 'chelsea-suede', name: 'Chelsea Suede', price: 380, category: 'Shoes', gender: 'Menswear', colors: ['Sand', 'Espresso'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Refined Chelsea boots in premium suede.', img: '/assets/dress-7.jpeg', images: ['/assets/dress-7.jpeg'] },
+    { id: 'loafer-patent', name: 'Loafer Patent', price: 350, category: 'Shoes', gender: 'Menswear', colors: ['Black'], sizes: ['40', '41', '42', '43', '44', '45'], vendorId: 'vendor-1', description: 'Polished patent leather loafers for the distinguished gentleman.', img: '/assets/dress-8.jpeg', images: ['/assets/dress-8.jpeg'] },
+    { id: 'stiletto-suede', name: 'Stiletto Suede', price: 480, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Nude'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Elegant stiletto heels in sumptuous suede.', img: '/assets/gress-9.jpeg', images: ['/assets/gress-9.jpeg'] },
+    { id: 'ankle-boot-leather', name: 'Ankle Boot Leather', price: 390, category: 'Shoes', gender: 'Womenswear', colors: ['Black', 'Oxblood'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Structured ankle boots in premium leather.', img: '/assets/dress-10.jpeg', images: ['/assets/dress-10.jpeg'] },
+    { id: 'strappy-heel', name: 'Strappy Heel', price: 340, category: 'Shoes', gender: 'Womenswear', colors: ['Gold', 'Champagne'], sizes: ['35', '36', '37', '38', '39', '40'], vendorId: 'vendor-1', description: 'Delicate strappy heels in metallic gold.', img: '/assets/dress-5.png', images: ['/assets/dress-5.png'] },
   ];
 
   for (const p of products) {
@@ -102,8 +139,9 @@ export async function seedData() {
       colors: p.colors,
       sizes: p.sizes,
       description: p.description,
-      vendorId: p.vendorId,
-      img: '/assets/dress-hero.png',
+      vendorId: p.vendorId === 'ef-main' ? 'vendor-1' : p.vendorId,
+      img: p.img || '/assets/dress-hero.png',
+      images: p.images || [p.img || '/assets/dress-hero.png'],
       rentalAvailable: p.rentalAvailable || false,
       rentalPricePerDay: p.rentalPricePerDay || 0,
       inventory,
@@ -128,6 +166,79 @@ export async function seedData() {
       productId: 'ivoire-draped', userId: 'cust-1', userName: 'Isabelle Moreau', rating: 4,
       comment: 'Beautiful draping and luxurious feel. Slightly longer than expected but easily altered.',
       vendorReply: 'Thank you for your feedback! We are glad you loved the piece.',
+    },
+  ]);
+
+  await Order.insertMany([
+    {
+      _id: 'order-1',
+      userId: 'cust-1',
+      items: [
+        { productId: 'ecarlate-gown', name: 'Écarlate Gown', price: 1290, quantity: 1, size: 'M', color: 'Red', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: true, rentalDetails: { startDate: '2026-08-01', endDate: '2026-08-05' } },
+      ],
+      subtotal: 1290,
+      deposit: 160,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 0,
+      total: 1450,
+      coupon: null,
+      shipping: { address: '12 Rue de Rivoli, Paris', method: 'express' },
+      payment: { method: 'card', status: 'paid' },
+      status: 'delivered',
+      rentalStatus: 'pending_return',
+      rentalDetails: { startDate: '2026-08-01', endDate: '2026-08-05' },
+      timeline: [
+        { status: 'confirmed', date: '2026-07-20T10:00:00.000Z', description: 'Order placed successfully' },
+        { status: 'shipped', date: '2026-07-22T14:00:00.000Z', description: 'Order shipped via express' },
+        { status: 'delivered', date: '2026-07-24T09:00:00.000Z', description: 'Order delivered to customer' },
+      ],
+    },
+    {
+      _id: 'order-2',
+      userId: 'cust-1',
+      items: [
+        { productId: 'noir-blazer', name: 'Noir Blazer', price: 780, quantity: 1, size: 'L', color: 'Black', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+        { productId: 'wool-trousers', name: 'Wool Trousers', price: 460, quantity: 1, size: 'L', color: 'Charcoal', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+      ],
+      subtotal: 1240,
+      deposit: 0,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 100,
+      total: 1140,
+      coupon: { code: 'WELCOME10', type: 'fixed', value: 100 },
+      shipping: { address: '45 Avenue Montaigne, Paris', method: 'standard' },
+      payment: { method: 'card', status: 'paid' },
+      status: 'processing',
+      rentalStatus: 'active',
+      rentalDetails: null,
+      timeline: [
+        { status: 'confirmed', date: '2026-07-25T11:30:00.000Z', description: 'Order placed successfully' },
+        { status: 'processing', date: '2026-07-26T09:00:00.000Z', description: 'Order is being prepared' },
+      ],
+    },
+    {
+      _id: 'order-3',
+      userId: 'cust-1',
+      items: [
+        { productId: 'stiletto-suede', name: 'Stiletto Suede', price: 480, quantity: 2, size: '38', color: 'Black', img: '/assets/dress-hero.png', vendorId: 'vendor-1', isRental: false, rentalDetails: null },
+      ],
+      subtotal: 960,
+      deposit: 0,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 0,
+      total: 960,
+      coupon: null,
+      shipping: { address: '8 Place Vendôme, Paris', method: 'express' },
+      payment: { method: 'card', status: 'paid' },
+      status: 'confirmed',
+      rentalStatus: 'active',
+      rentalDetails: null,
+      timeline: [
+        { status: 'confirmed', date: '2026-07-28T16:00:00.000Z', description: 'Order placed successfully' },
+      ],
     },
   ]);
 

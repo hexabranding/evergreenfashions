@@ -33,7 +33,7 @@ export default function Login() {
     setLoading(false);
 
     if (result.success) {
-      const user = JSON.parse(localStorage.getItem("ef_currentUser"));
+      const user = result.user || JSON.parse(localStorage.getItem("ef_currentUser"));
       if (user?.role === "vendor") navigate("/vendor");
       else if (user?.role === "admin") navigate("/admin");
       else navigate("/");

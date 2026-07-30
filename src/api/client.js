@@ -16,8 +16,14 @@ async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const headers = { "Content-Type": "application/json", ...options.headers };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  
-  const res = await fetch(url, { ...options, headers });
+  const controller = new AbortController();
+  const requestTimeout = window.setTimeout(() => controller.abort(), 30000);
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers, signal: controller.signal });
+  } finally {
+    window.clearTimeout(requestTimeout);
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;

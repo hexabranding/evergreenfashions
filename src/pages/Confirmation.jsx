@@ -7,19 +7,11 @@ import { parsePrice } from "@/data/products";
 export default function Confirmation() {
   const { order } = useCart();
 
-  const paymentDescription = () => {
-    if (order.payment.method === "card") return `Card ending in ${order.payment.cardNumber?.replace(/\s/g, "").slice(-4) || "****"}`;
-    if (order.payment.method === "upi") return `UPI: ${order.payment.upiId || "Verified"}`;
-    if (order.payment.method === "paypal") return "PayPal";
-    if (order.payment.method === "klarna") return "Klarna";
-    return "Payment confirmed";
-  };
-
   if (!order) {
     return (
       <section className="max-w-[1600px] mx-auto px-8 py-20 min-h-[60vh] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-muted-foreground mb-6">No order found.</p>
+          <p className="text-muted-foreground mb-6">No order found. Please place an order first.</p>
           <Link to="/collection" className="btn-ink btn-ink-hover">
             Browse Collection
           </Link>
@@ -27,6 +19,35 @@ export default function Confirmation() {
       </section>
     );
   }
+
+  const paymentDescription = () => {
+    const method = order.payment?.method || "card";
+    if (method === "card") return `Card ending in ${order.payment?.cardNumber?.replace(/\s/g, "").slice(-4) || "****"}`;
+    if (method === "upi") return `UPI: ${order.payment?.upiId || "Verified"}`;
+    if (method === "paypal") return "PayPal";
+    if (method === "klarna") return "Klarna";
+    return "Payment confirmed";
+  };
+
+  const formatOrderDate = (dateStr) => {
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        year: "numeric", month: "long", day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatDeliveryDate = (dateStr) => {
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        year: "numeric", month: "long", day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
 
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-16 min-h-[70vh]">
@@ -75,7 +96,7 @@ export default function Confirmation() {
                 <div className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1">
                   Date
                 </div>
-                <div className="text-sm">{order.date}</div>
+                <div className="text-sm">{formatOrderDate(order.date)}</div>
               </div>
             </div>
           </div>
@@ -90,7 +111,7 @@ export default function Confirmation() {
                 { icon: Check, label: "Order Confirmed", sub: "Your order has been received", done: true },
                 { icon: Package, label: "Preparing", sub: "Being handcrafted in our atelier", done: false },
                 { icon: Truck, label: "Shipped", sub: "Estimated 2-3 business days", done: false },
-                { icon: MapPin, label: "Delivered", sub: order.estimatedDelivery, done: false },
+                { icon: MapPin, label: "Delivered", sub: formatDeliveryDate(order.estimatedDelivery), done: false },
               ].map((step, i) => (
                 <div key={step.label} className="flex items-start gap-4">
                   <div
@@ -142,7 +163,7 @@ export default function Confirmation() {
                   <div className="flex-1">
                     <div className="font-serif text-sm">{item.name}</div>
                     <div className="text-[10px] text-muted-foreground">
-                      Qty: {item.qty} · {item.tag}
+                      Qty: {item.qty}{item.selectedSize && ` · Size: ${item.selectedSize}`}{item.selectedColor && ` · ${item.selectedColor}`}
                     </div>
                   </div>
                   <span className="font-serif text-sm">
@@ -166,7 +187,7 @@ export default function Confirmation() {
             <div className="text-[10px] tracking-[0.2em] uppercase font-medium mb-4">
               Total Paid
             </div>
-            <div className="font-serif text-3xl mb-2">€{order.total.toLocaleString()}</div>
+            <div className="font-serif text-3xl mb-2">{parsePrice(order.total)}</div>
             <div className="text-[10px] text-muted-foreground">{paymentDescription()}</div>
           </div>
 
@@ -188,7 +209,7 @@ export default function Confirmation() {
             <div className="text-[10px] tracking-[0.2em] uppercase font-medium mb-4">
               Estimated Delivery
             </div>
-            <div className="font-serif text-lg text-crimson">{order.estimatedDelivery}</div>
+            <div className="font-serif text-lg text-crimson">{formatDeliveryDate(order.estimatedDelivery)}</div>
             <div className="text-[10px] text-muted-foreground mt-1">
               Free express shipping
             </div>

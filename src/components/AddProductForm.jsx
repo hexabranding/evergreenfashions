@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { colorMap, parsePrice } from "@/data/products";
+import { uploadApi } from "@/api/upload";
 import {
   Package,
   Image,
@@ -42,6 +43,7 @@ const fadeUp = {
 
 export default function AddProductForm({ categories, vendors, onSave, onCancel, editProduct }) {
   const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   const [form, setForm] = useState({
     name: editProduct?.name || "",
@@ -65,20 +67,25 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
   const [customSize, setCustomSize] = useState("");
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setImagePreviews((prev) => [...prev, ev.target.result]);
-        setForm((prev) => ({
-          ...prev,
-          images: [...prev.images, ev.target.result],
-        }));
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = "";
+    if (files.length === 0) return;
+
+    setUploading(true);
+    try {
+      const result = await uploadApi.uploadMultiple(files);
+      setImagePreviews((prev) => [...prev, ...result.urls]);
+      setForm((prev) => ({
+        ...prev,
+        images: [...prev.images, ...result.urls],
+      }));
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Image upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
   const removeImage = (index) => {
@@ -332,10 +339,15 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square bg-cream border-2 border-dashed border-border/60 rounded-sm flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors"
+                  disabled={uploading}
+                  className="aspect-square bg-cream border-2 border-dashed border-border/60 rounded-sm flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors disabled:opacity-50"
                 >
-                  <Upload size={20} />
-                  <span className="text-[10px] uppercase tracking-wider">Upload</span>
+                  {uploading ? (
+                    <div className="w-5 h-5 border-2 border-ink/30 border-t-ink rounded-full animate-spin" />
+                  ) : (
+                    <Upload size={20} />
+                  )}
+                  <span className="text-[10px] uppercase tracking-wider">{uploading ? "Uploading..." : "Upload"}</span>
                 </button>
               </div>
               <input

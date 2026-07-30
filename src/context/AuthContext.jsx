@@ -158,7 +158,7 @@ export function AuthProvider({ children }) {
           const exists = previous.some((user) => user.id === apiUser.id);
           return exists ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser];
         });
-        return { success: true, error: null };
+        return { success: true, error: null, user: apiUser };
       } catch {
         // Preserve the local demo mode when the backend is not running.
       }
@@ -168,7 +168,7 @@ export function AuthProvider({ children }) {
         return { success: false, error: "Invalid email or password" };
 
       setCurrentUser(stripPassword(user));
-      return { success: true, error: null };
+      return { success: true, error: null, user: stripPassword(user) };
     },
     [users]
   );

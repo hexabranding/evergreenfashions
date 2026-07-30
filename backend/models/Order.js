@@ -31,7 +31,7 @@ const orderSchema = new mongoose.Schema({
   coupon: { type: mongoose.Schema.Types.Mixed, default: null },
   shipping: { type: mongoose.Schema.Types.Mixed, default: {} },
   payment: { type: mongoose.Schema.Types.Mixed, default: {} },
-  status: { type: String, default: 'confirmed' },
+  status: { type: String, default: 'confirmed', enum: ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'] },
   rentalStatus: { type: String, default: 'active', enum: ['active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'] },
   returnRequested: { type: Boolean, default: false },
   returnRequestedDate: String,
