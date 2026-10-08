@@ -18,9 +18,7 @@ import {
   Repeat,
 } from "lucide-react";
 
-const ALL_COLORS = Object.keys(colorMap);
-
-const DEFAULT_SIZES = ["XS", "S", "M", "L", "XL"];
+const ALL_COLORS = Object.keys(colorMap);const DEFAULT_SIZES = ["XS", "S", "M", "L", "XL"];
 const SHOE_SIZES = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
 const MENSWEAR_SIZES = ["S", "M", "L", "XL", "XXL"];
 
@@ -43,7 +41,15 @@ const fadeUp = {
 
 export default function AddProductForm({ categories, vendors, onSave, onCancel, editProduct }) {
   const fileInputRef = useRef(null);
+  const colorFileRefs = useRef({});
   const [uploading, setUploading] = useState(false);
+
+  // Admin lists store stock as a total number; API products carry the per-size
+  // inventory array. Rebuild the { size: qty } map so editing pre-fills correctly.
+  const editStockMap =
+    editProduct?.inventory && Array.isArray(editProduct.inventory) && editProduct.inventory.length > 0
+      ? Object.fromEntries(editProduct.inventory.map((item) => [item.size, item.stock]))
+      : (editProduct?.stock && typeof editProduct.stock === "object" ? editProduct.stock : {});
 
   const [form, setForm] = useState({
     name: editProduct?.name || "",
@@ -58,9 +64,13 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
     sizePreset: "Standard",
     colors: editProduct?.colors || [],
     images: editProduct?.images || [],
-    stock: editProduct?.stock || {},
+    stock: editStockMap,
     vendorId: editProduct?.vendorId || editProduct?.vendor || "",
   });
+
+  const [colorImages, setColorImages] = useState(
+    editProduct?.colorImages && typeof editProduct.colorImages === "object" ? editProduct.colorImages : {}
+  );
 
   const [imagePreviews, setImagePreviews] = useState(
     editProduct?.images?.map((img) => (typeof img === "string" ? img : null)).filter(Boolean) || []
@@ -144,11 +154,61 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
   };
 
   const toggleColor = (color) => {
+    const isSelected = form.colors.includes(color);
     setForm((prev) => ({
       ...prev,
-      colors: prev.colors.includes(color)
+      colors: isSelected
         ? prev.colors.filter((c) => c !== color)
         : [...prev.colors, color],
+    }));
+    setColorImages((prev) => {
+      if (isSelected) {
+        const next = { ...prev };
+        delete next[color];
+        return next;
+      }
+      return prev[color] ? prev : { ...prev, [color]: [] };
+    });
+  };
+
+  const handleColorImageUpload = async (color, e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const current = colorImages[color] || [];
+    const remaining = 3 - current.length;
+    const filesToUpload = files.slice(0, Math.max(0, remaining));
+    if (filesToUpload.length === 0) return;
+
+    setUploading(true);
+    try {
+      const result = await uploadApi.uploadMultiple(filesToUpload);
+      setColorImages((prev) => ({
+        ...prev,
+        [color]: [...(prev[color] || []), ...result.urls].slice(0, 3),
+      }));
+    } catch (err) {
+      console.error("Server upload failed, using base64 fallback:", err);
+      filesToUpload.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setColorImages((prev) => ({
+            ...prev,
+            [color]: [...(prev[color] || []), ev.target.result].slice(0, 3),
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeColorImage = (color, index) => {
+    setColorImages((prev) => ({
+      ...prev,
+      [color]: (prev[color] || []).filter((_, i) => i !== index),
     }));
   };
 
@@ -163,9 +223,11 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name || !form.category || !form.price || form.images.length === 0) return;
+    const allColorImages = Object.values(colorImages).flat();
+    if (!form.name || !form.category || !form.price || (form.images.length === 0 && allColorImages.length === 0)) return;
 
     const inventory = Object.entries(form.stock).map(([size, stock]) => ({ size, stock }));
+    const allImages = [...new Set([...form.images, ...allColorImages])];
 
     const product = {
       id: editProduct?.id || `product-${Date.now()}`,
@@ -181,8 +243,9 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
       rentalAvailable: form.rentalAvailable,
       rentalPricePerDay: form.rentalAvailable ? parseFloat(form.rentalPricePerDay) || 0 : 0,
       rentalDeposit: form.rentalAvailable ? parseFloat(form.rentalDeposit) || 100 : 100,
-      images: form.images,
-      img: form.images[0] || null,
+      colorImages,
+      images: allImages,
+      img: allImages[0] || null,
       tag: form.category,
       vendorId: form.vendorId || editProduct?.vendorId || "ef-main",
     };
@@ -386,7 +449,7 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
                 onChange={handleImageUpload}
                 className="hidden"
               />
-              <p className="text-[11px] text-muted-foreground">Upload at least one product photo. The first image will be the main image.</p>
+              <p className="text-[11px] text-muted-foreground">General photos, shown when a color has no photos. The first image is the main product image.</p>
             </div>
 
             <div>
@@ -425,6 +488,75 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
                 </div>
               </div>
             </div>
+
+            {form.colors.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Image size={12} />
+                    Photos per Color
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">Up to 3 photos each</span>
+                </div>
+                {form.colors.map((color) => {
+                  const photos = colorImages[color] || [];
+                  return (
+                    <div key={color} className="bg-cream border border-border/60 rounded-sm p-3">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span
+                          className="w-4 h-4 rounded-full border border-black/10 flex-shrink-0"
+                          style={{ backgroundColor: colorMap[color] }}
+                        />
+                        <span className="text-sm font-medium text-foreground">{color}</span>
+                        <span className="text-[11px] text-muted-foreground">{photos.length}/3 photos</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {photos.map((photo, i) => (
+                          <div key={i} className="relative aspect-square bg-background border border-border/60 rounded-sm overflow-hidden group">
+                            <img src={photo} alt={`${color} ${i + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeColorImage(color, i)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-ink/80 text-cream rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X size={10} />
+                            </button>
+                            {i === 0 && (
+                              <div className="absolute bottom-1 left-1 bg-ink text-cream text-[8px] px-1 py-0.5 rounded-sm font-medium">
+                                Main
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {photos.length < 3 && (
+                          <button
+                            type="button"
+                            onClick={() => colorFileRefs.current[color]?.click()}
+                            disabled={uploading}
+                            className="aspect-square bg-background border-2 border-dashed border-border/60 rounded-sm flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors disabled:opacity-50"
+                          >
+                            {uploading ? (
+                              <div className="w-4 h-4 border-2 border-ink/30 border-t-ink rounded-full animate-spin" />
+                            ) : (
+                              <Upload size={16} />
+                            )}
+                            <span className="text-[9px] uppercase tracking-wider">Add</span>
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        ref={(el) => { colorFileRefs.current[color] = el; }}
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        multiple
+                        onChange={(e) => handleColorImageUpload(color, e)}
+                        className="hidden"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-3">

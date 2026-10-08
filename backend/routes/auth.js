@@ -29,9 +29,12 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    const userRole = (role === 'vendor') ? 'vendor' : 'customer';
+    const userRole = 'customer'; // Public signup is customers only. Vendors are created by admins via /auth/register-vendor.
     const hashedPassword = await bcrypt.hash(password, 10);
+    const rolePrefix = userRole === 'vendor' ? 'vendor' : userRole === 'admin' ? 'admin' : 'cust';
+    const userId = `${rolePrefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const userData = {
+      _id: userId,
       firstName, lastName, email, password: hashedPassword,
       role: userRole, phone: phone || null, addresses: [],
     };
@@ -87,15 +90,40 @@ router.post('/phone-otp/request', async (req, res) => {
 });
 
 router.post('/phone-otp/verify', async (req, res) => {
-  const phone = String(req.body.phone || '').trim();
-  const otp = String(req.body.otp || '').trim();
-  const record = phoneOtps.get(phone);
-  if (!record || record.expiresAt < Date.now() || record.otp !== otp) return res.status(401).json({ error: 'Invalid or expired OTP' });
-  phoneOtps.delete(phone);
-  let user = await User.findOne({ phone });
-  if (!user) user = await User.create({ _id: `phone-${Date.now().toString(36)}`, firstName: 'Customer', lastName: '', email: `${phone.replace(/\D/g, '')}@phone.evergreen.local`, password: await bcrypt.hash(`${Date.now()}-${phone}`, 10), role: 'customer', phone, addresses: [] });
-  const { password: _, ...userObj } = user.toObject();
-  res.json({ token: generateToken(user), user: userObj });
+  try {
+    const phone = String(req.body.phone || '').trim();
+    const otp = String(req.body.otp || '').trim();
+    const record = phoneOtps.get(phone);
+    if (!record || record.expiresAt < Date.now() || record.otp !== otp) return res.status(401).json({ error: 'Invalid or expired OTP' });
+    phoneOtps.delete(phone);
+
+    let user = await User.findOne({ phone });
+    if (!user) {
+      const firstName = String(req.body.firstName || '').trim() || 'Customer';
+      const lastName = String(req.body.lastName || '').trim();
+      const requestedEmail = String(req.body.email || '').trim().toLowerCase();
+      let email = requestedEmail;
+      if (email) {
+        const emailTaken = await User.findOne({ email });
+        if (emailTaken) return res.status(400).json({ error: 'Email already registered — sign in with your email instead' });
+      } else {
+        email = `${phone.replace(/\D/g, '')}@phone.evergreen.local`;
+      }
+
+      const userId = `phone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      user = await User.create({
+        _id: userId,
+        firstName, lastName, email,
+        password: await bcrypt.hash(`${Date.now()}-${phone}`, 10),
+        role: 'customer', phone, addresses: [],
+      });
+    }
+
+    const { password: _, ...userObj } = user.toObject();
+    res.json({ token: generateToken(user), user: userObj });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/me', authMiddleware, async (req, res) => {
@@ -178,7 +206,9 @@ router.delete('/me/addresses/:id', authMiddleware, async (req, res) => {
 
 router.post('/register-vendor', authMiddleware, adminOnly, async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    console.log('Register vendor request from:', req.user.id, 'role:', req.user.role);
+    const { firstName, lastName, email, password, vendorStore } = req.body;
+    console.log('Vendor data:', { firstName, lastName, email, vendorStore });
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
@@ -189,10 +219,16 @@ router.post('/register-vendor', authMiddleware, adminOnly, async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = `vendor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const user = await User.create({
+      _id: userId,
       firstName, lastName, email, password: hashedPassword,
       role: 'vendor', phone: null, addresses: [],
-      vendorStore: { name: `${firstName} ${lastName}`, description: '', commission: 15 },
+      vendorStore: {
+        name: vendorStore?.name || `${firstName} ${lastName}`,
+        description: vendorStore?.description || '',
+        commission: vendorStore?.commission || 15,
+      },
     });
 
     const { password: _, ...userObj } = user.toObject();
@@ -236,7 +272,9 @@ router.post('/register-customer', authMiddleware, vendorOnly, async (req, res) =
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = `cust-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const user = await User.create({
+      _id: userId,
       firstName, lastName, email, password: hashedPassword,
       role: 'customer', phone: phone || null, addresses: [],
     });

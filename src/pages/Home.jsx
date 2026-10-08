@@ -345,8 +345,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Advertisement Banner */}
-      <AdvertisementSlider />
       {/*
         <div className="relative h-[500px] md:h-[600px]">
           <img
@@ -480,6 +478,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Advertisement Banner */}
+      <AdvertisementSlider />
 
       {/* Shop Menswear */}
       <section className="max-w-[1600px] mx-auto px-8 py-24">

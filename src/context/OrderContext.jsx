@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { allProducts } from "@/data/products";
 import { ordersApi } from "@/api/orders";
+import { isOfflineError } from "@/lib/utils";
 
 const OrderContext = createContext();
 
@@ -28,6 +29,100 @@ function buildInventoryFromProducts(products) {
     inventory[slug] = stock;
   });
   return inventory;
+}
+
+const DEMO_CUSTOMER_ID = "cust-1";
+
+function buildDemoOrders() {
+  const find = (id) => allProducts.find((p) => p.id === id) || {};
+  const item = (id, qty, size, color, extra = {}) => ({
+    productId: id,
+    name: find(id).name || id,
+    price: find(id).price || 0,
+    qty,
+    quantity: qty,
+    size,
+    selectedSize: size,
+    color,
+    selectedColor: color,
+    img: find(id).img || "",
+    vendorId: "vendor-1",
+    ...extra,
+  });
+  return [
+    {
+      id: "order-1",
+      userId: DEMO_CUSTOMER_ID,
+      customerName: "Isabelle Moreau",
+      customerEmail: "customer@evergreen.com",
+      date: "2026-07-24T09:00:00.000Z",
+      items: [item("ecarlate-gown", 1, "M", "Red", { isRental: true, rentalDetails: { startDate: "2026-08-01", endDate: "2026-08-05" } })],
+      subtotal: 1290,
+      deposit: 160,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 0,
+      total: 1450,
+      coupon: null,
+      shipping: { address: "12 Rue de Rivoli, Paris", method: "express" },
+      payment: { method: "card", status: "paid" },
+      status: "delivered",
+      rentalStatus: "pending_return",
+      rentalDetails: { startDate: "2026-08-01", endDate: "2026-08-05" },
+      timeline: [
+        { status: "confirmed", date: "2026-07-20T10:00:00.000Z", description: "Order placed successfully" },
+        { status: "shipped", date: "2026-07-22T14:00:00.000Z", description: "Order shipped via express" },
+        { status: "delivered", date: "2026-07-24T09:00:00.000Z", description: "Order delivered to customer" },
+      ],
+    },
+    {
+      id: "order-2",
+      userId: DEMO_CUSTOMER_ID,
+      customerName: "Isabelle Moreau",
+      customerEmail: "customer@evergreen.com",
+      date: "2026-07-26T09:00:00.000Z",
+      items: [item("noir-blazer", 1, "L", "Black"), item("wool-trousers", 1, "L", "Charcoal")],
+      subtotal: 1240,
+      deposit: 0,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 100,
+      total: 1140,
+      coupon: { code: "WELCOME10", type: "fixed", value: 100 },
+      shipping: { address: "45 Avenue Montaigne, Paris", method: "standard" },
+      payment: { method: "card", status: "paid" },
+      status: "processing",
+      rentalStatus: "active",
+      rentalDetails: null,
+      timeline: [
+        { status: "confirmed", date: "2026-07-25T11:30:00.000Z", description: "Order placed successfully" },
+        { status: "processing", date: "2026-07-26T09:00:00.000Z", description: "Order is being prepared" },
+      ],
+    },
+    {
+      id: "order-3",
+      userId: DEMO_CUSTOMER_ID,
+      customerName: "Isabelle Moreau",
+      customerEmail: "customer@evergreen.com",
+      date: "2026-07-28T16:00:00.000Z",
+      items: [item("stiletto-suede", 2, "38", "Black")],
+      subtotal: 960,
+      deposit: 0,
+      depositRefunded: false,
+      refundAmount: 0,
+      discount: 0,
+      total: 960,
+      coupon: null,
+      shipping: { address: "8 Place Vendôme, Paris", method: "express" },
+      payment: { method: "card", status: "paid" },
+      status: "confirmed",
+      rentalStatus: "active",
+      rentalDetails: null,
+      timeline: [
+        { status: "confirmed", date: "2026-07-28T16:00:00.000Z", description: "Order placed successfully" },
+      ],
+    },
+  ];
 }
 
 const SEEDED_REVIEWS = (() => {
@@ -176,6 +271,8 @@ const placeOrder = useCallback(
         : null;
 
       const now = new Date();
+      const customerName = [shippingInfo?.firstName, shippingInfo?.lastName].filter(Boolean).join(" ");
+      const customerEmail = shippingInfo?.email || "";
       const newOrder = {
         id: `EF-${Date.now()}`,
         items: orderItems,
@@ -194,6 +291,8 @@ const placeOrder = useCallback(
         date: now.toISOString(),
         estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         userId,
+        customerName,
+        customerEmail,
         timeline: [{ status: "confirmed", date: now.toISOString() }],
       };
 
@@ -276,40 +375,92 @@ const placeOrder = useCallback(
     [restoreStock]
   );
 
-  const requestReturn = useCallback(async (orderId, reason) => {
+  const requestReturn = useCallback(async (orderId, reason, photos = []) => {
+    let offline = false;
     try {
-      await ordersApi.returnOrder(orderId, reason);
-    } catch {
-      /* fallback: handled locally */
+      await ordersApi.returnOrder(orderId, reason, photos);
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      offline = true;
     }
+    const photosDate = photos.length > 0 ? new Date().toISOString() : undefined;
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id !== orderId) return o;
+        const photoFields = {
+          returnRequested: true,
+          returnRequestedDate: new Date().toISOString(),
+          returnReason: reason || "",
+          returnPhotos: photos,
+          returnPhotosDate: photosDate,
+        };
         if (o.rentalDetails) {
           return {
             ...o,
-            returnRequested: true,
-            returnRequestedDate: new Date().toISOString(),
+            ...photoFields,
             rentalStatus: "pending_return",
             status: "delivered",
             timeline: [
               ...o.timeline,
               { status: "pending_return", date: new Date().toISOString(), description: reason || "Return requested by customer" },
+              ...(photos.length > 0
+                ? [{ status: "return_photos", date: photosDate, description: `${photos.length} return item photo(s) uploaded by customer` }]
+                : []),
             ],
           };
         }
         return {
           ...o,
-          returnRequested: true,
-          returnRequestedDate: new Date().toISOString(),
+          ...photoFields,
           status: "return_requested",
           timeline: [
             ...o.timeline,
             { status: "return_requested", date: new Date().toISOString(), description: reason || "Return requested by customer" },
+            ...(photos.length > 0
+              ? [{ status: "return_photos", date: photosDate, description: `${photos.length} return item photo(s) uploaded by customer` }]
+              : []),
           ],
         };
       })
     );
+    return { offline };
+  }, []);
+
+  const uploadReturnPhotos = useCallback(async (orderId, photos = []) => {
+    if (!photos || photos.length === 0) return { saved: [], offline: false };
+    let saved = photos;
+    let offline = false;
+    try {
+      const data = await ordersApi.uploadReturnPhotos(orderId, photos);
+      saved = data.returnPhotos || photos;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      offline = true;
+    }
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        const merged = [...new Set([...(o.returnPhotos || []), ...saved])];
+        const added = merged.length - (o.returnPhotos?.length || 0);
+        return {
+          ...o,
+          returnPhotos: merged,
+          returnPhotosDate: new Date().toISOString(),
+          timeline:
+            added > 0
+              ? [
+                  ...o.timeline,
+                  {
+                    status: "return_photos",
+                    date: new Date().toISOString(),
+                    description: `${added} return item photo(s) uploaded by customer`,
+                  },
+                ]
+              : o.timeline,
+        };
+      })
+    );
+    return { saved, offline };
   }, []);
 
   const inspectOrder = useCallback((orderId, inspectionStatus, notes) => {
@@ -502,7 +653,9 @@ const placeOrder = useCallback(
       setVendorApiOrders(mapped);
       return mapped;
     } catch {
-      return [];
+      const demo = buildDemoOrders();
+      setVendorApiOrders(demo);
+      return demo;
     } finally {
       setVendorOrdersLoading(false);
     }
@@ -526,7 +679,9 @@ const placeOrder = useCallback(
       setAdminApiOrders(mapped);
       return mapped;
     } catch {
-      return [];
+      const demo = buildDemoOrders();
+      setAdminApiOrders(demo);
+      return demo;
     } finally {
       setAdminOrdersLoading(false);
     }
@@ -550,7 +705,9 @@ const placeOrder = useCallback(
       setCustomerApiOrders(mapped);
       return mapped;
     } catch {
-      return [];
+      const demo = buildDemoOrders();
+      setCustomerApiOrders(demo);
+      return demo;
     } finally {
       setCustomerOrdersLoading(false);
     }
@@ -596,6 +753,7 @@ const placeOrder = useCallback(
         updateOrderStatus,
         returnOrder,
         requestReturn,
+        uploadReturnPhotos,
         confirmReturn,
         inspectOrder,
         refundDeposit,

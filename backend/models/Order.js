@@ -20,7 +20,10 @@ const timelineSchema = new mongoose.Schema({
 }, { _id: false });
 
 const orderSchema = new mongoose.Schema({
+  _id: { type: String },
   userId: { type: String, required: true },
+  customerName: { type: String, default: '' },
+  customerEmail: { type: String, default: '' },
   items: [orderItemSchema],
   subtotal: { type: Number, required: true },
   deposit: { type: Number, default: 0 },
@@ -35,6 +38,10 @@ const orderSchema = new mongoose.Schema({
   rentalStatus: { type: String, default: 'active', enum: ['active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'] },
   returnRequested: { type: Boolean, default: false },
   returnRequestedDate: String,
+  returnReason: String,
+  returnPhotos: { type: [String], default: [] },
+  returnPhotosDate: String,
+  returnPhotosReviewed: { type: Boolean, default: false },
   inspectionStatus: { type: String, default: 'pending', enum: ['pending', 'passed', 'damaged', 'partial_refund'] },
   inspectedBy: String,
   inspectedAt: String,

@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ShoppingBag, Search, Heart, X, Truck, ShieldCheck, RotateCcw, CreditCard,
-  User, LogOut, ChevronDown,
+  User, LogOut, ChevronDown, ArrowUp, Check,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useCart } from "@/context/CartContext";
@@ -41,6 +41,13 @@ const paymentMethods = [
 const footerShop = ["Dresses", "Gowns", "Outerwear", "Footwear", "Suits", "Accessories"];
 const footerCompany = ["About Us", "Atelier", "Sustainability", "Careers", "Press"];
 const footerHelp = ["Contact Us", "Shipping Info", "Returns", "Size Guide", "FAQ"];
+const footerSocials = ["Instagram", "Pinterest", "TikTok", "X"];
+const footerCities = [
+  { city: "Paris", address: "12 Rue de Rivoli" },
+  { city: "Milano", address: "Via Montenapoleone 12" },
+  { city: "Tokyo", address: "Minami-Aoyama 3-9" },
+  { city: "New York", address: "SoHo, Greene Street" },
+];
 
 export default function Layout() {
   const { products } = useProducts();
@@ -56,6 +63,8 @@ export default function Layout() {
   const searchRef = useRef(null);
   const userMenuRef = useRef(null);
   const [results, setResults] = useState([]);
+  const [newsletterEmail, setNewsletterEmail] = useState("");
+  const [newsletterSubscribed, setNewsletterSubscribed] = useState(false);
 
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -261,40 +270,129 @@ export default function Layout() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-ink text-cream py-16 px-8">
-        <div className="max-w-[1600px] mx-auto">
-          <div className="grid md:grid-cols-4 gap-10 mb-14">
+      <footer className="bg-ink text-cream">
+        {/* Newsletter */}
+        <div className="border-b border-cream/10">
+          <div className="max-w-[1600px] mx-auto px-8 py-14 grid lg:grid-cols-2 gap-10 items-center">
             <div>
-              <div className="text-xl tracking-[0.35em] font-serif mb-4">EVERGREEN FASHION</div>
-              <p className="text-xs opacity-50 leading-relaxed max-w-xs">Couture handcrafted in Paris since 1957. Unisex fashion that moves with you. A quiet revolt against the disposable.</p>
-              <div className="flex flex-wrap gap-1.5 mt-5">
+              <p className="text-[10px] tracking-[0.35em] uppercase text-crimson mb-4">The Evergreen Letters</p>
+              <h2 className="font-serif text-3xl md:text-4xl leading-tight text-cream">
+                Private previews, early access<br className="hidden md:block" /> to every new collection.
+              </h2>
+            </div>
+            {newsletterSubscribed ? (
+              <div className="flex items-center gap-3 border border-cream/25 px-6 py-4">
+                <Check size={16} className="text-crimson" />
+                <p className="text-sm text-cream/80">Welcome to the atelier. Your first letter arrives soon.</p>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (newsletterEmail.includes("@")) setNewsletterSubscribed(true);
+                }}
+                className="flex flex-col sm:flex-row gap-3"
+              >
+                <input
+                  type="email"
+                  required
+                  value={newsletterEmail}
+                  onChange={(e) => setNewsletterEmail(e.target.value)}
+                  placeholder="Your email address"
+                  className="flex-1 bg-transparent border border-cream/25 px-5 py-4 text-sm text-cream placeholder:text-cream/40 focus:outline-none focus:border-cream/60 transition-colors"
+                />
+                <button
+                  type="submit"
+                  className="bg-cream text-ink px-8 py-4 text-[11px] tracking-[0.25em] uppercase font-medium hover:bg-crimson hover:text-cream transition-colors"
+                >
+                  Subscribe
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* Link columns */}
+        <div className="max-w-[1600px] mx-auto px-8 py-16">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-10">
+            <div className="col-span-2 lg:col-span-4">
+              <div className="text-xl tracking-[0.35em] font-serif mb-5">EVERGREEN FASHION</div>
+              <p className="text-xs text-cream/50 leading-relaxed max-w-xs">
+                Couture handcrafted in Paris since 1957. Unisex fashion that moves with you. A quiet revolt against the disposable.
+              </p>
+              <div className="flex flex-wrap gap-x-6 gap-y-2 mt-7">
+                {footerSocials.map((s) => (
+                  <button
+                    key={s}
+                    className="text-[10px] tracking-[0.25em] uppercase text-cream/50 hover:text-crimson transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-7">
                 {paymentMethods.map((m) => (
-                  <span key={m} className="text-[8px] border border-cream/20 px-1.5 py-0.5 rounded opacity-50">{m}</span>
+                  <span key={m} className="text-[8px] tracking-widest border border-cream/20 px-2 py-1 text-cream/60">
+                    {m}
+                  </span>
                 ))}
               </div>
             </div>
-            <div>
-              <div className="eyebrow mb-4 text-cream/70">Shop</div>
-              <ul className="space-y-2.5 text-sm opacity-60">
-                {footerShop.map((item) => <li key={item}><a href="#" className="hover:text-crimson transition-colors">{item}</a></li>)}
+            <div className="lg:col-span-2">
+              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Shop</p>
+              <ul className="space-y-3 text-sm text-cream/70">
+                {footerShop.map((item) => (
+                  <li key={item}>
+                    <button className="hover:text-crimson transition-colors">{item}</button>
+                  </li>
+                ))}
               </ul>
             </div>
-            <div>
-              <div className="eyebrow mb-4 text-cream/70">Company</div>
-              <ul className="space-y-2.5 text-sm opacity-60">
-                {footerCompany.map((item) => <li key={item}><a href="#" className="hover:text-crimson transition-colors">{item}</a></li>)}
+            <div className="lg:col-span-2">
+              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Company</p>
+              <ul className="space-y-3 text-sm text-cream/70">
+                {footerCompany.map((item) => (
+                  <li key={item}>
+                    <button className="hover:text-crimson transition-colors">{item}</button>
+                  </li>
+                ))}
               </ul>
             </div>
-            <div>
-              <div className="eyebrow mb-4 text-cream/70">Help</div>
-              <ul className="space-y-2.5 text-sm opacity-60">
-                {footerHelp.map((item) => <li key={item}><a href="#" className="hover:text-crimson transition-colors">{item}</a></li>)}
+            <div className="lg:col-span-2">
+              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Help</p>
+              <ul className="space-y-3 text-sm text-cream/70">
+                {footerHelp.map((item) => (
+                  <li key={item}>
+                    <button className="hover:text-crimson transition-colors">{item}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="lg:col-span-2">
+              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Ateliers</p>
+              <ul className="space-y-3 text-sm text-cream/70">
+                {footerCities.map((c) => (
+                  <li key={c.city}>
+                    <p className="font-serif">{c.city}</p>
+                    <p className="text-[10px] text-cream/40 mt-0.5">{c.address}</p>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>
-          <div className="pt-8 border-t border-cream/10 flex flex-wrap justify-between gap-4 text-[10px] tracking-[0.2em] uppercase opacity-40">
-            <span>© MMXXVI Evergreen Fashion</span>
-            <span>Paris · Milano · Tokyo · New York</span>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="border-t border-cream/10">
+          <div className="max-w-[1600px] mx-auto px-8 py-6 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40">© MMXXVI Evergreen Fashion</p>
+            <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40">Paris · Milano · Tokyo · New York</p>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-cream/60 hover:text-crimson transition-colors"
+            >
+              Back to top <ArrowUp size={12} />
+            </button>
           </div>
         </div>
       </footer>

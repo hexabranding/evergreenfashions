@@ -26,6 +26,7 @@ export default function ProductDetail() {
   const [showRental, setShowRental] = useState(false);
   const [rentalStart, setRentalStart] = useState("");
   const [rentalEnd, setRentalEnd] = useState("");
+  const [sizeError, setSizeError] = useState(false);
 
   const product = products.find((p) => p.id === name);
 
@@ -34,6 +35,10 @@ export default function ProductDetail() {
       setSelectedColor(product.colors[0]);
     }
   }, [product, selectedColor]);
+
+  useEffect(() => {
+    setMainImage(0);
+  }, [selectedColor, product?.id]);
 
   if (!product) {
     return (
@@ -47,7 +52,12 @@ export default function ProductDetail() {
   }
 
   const isShoe = product.category === "Shoes";
-  const productImages = product.images?.length ? product.images : (product.img ? [product.img] : []);
+  const activeColor = selectedColor || product.colors?.[0];
+  const colorPhotos = product.colorImages?.[activeColor]?.length
+    ? product.colorImages[activeColor]
+    : null;
+  const productImages = colorPhotos
+    || (product.images?.length ? product.images : (product.img ? [product.img] : []));
   const avgRating = getAverageRating(product.id);
   const reviews = getReviewsByProduct(product.id);
 
@@ -188,7 +198,7 @@ export default function ProductDetail() {
               {(product.sizes || []).map((s) => {
                 const inStock = product.stock ? (product.stock[s] || 0) > 0 : true;
                 return (
-                  <button key={s} onClick={() => inStock && setSelectedSize(s)}
+                  <button key={s} onClick={() => { if (inStock) { setSelectedSize(s); setSizeError(false); } }}
                     disabled={!inStock}
                     className={`w-12 h-12 border text-xs tracking-wider transition-all ${
                       !inStock ? "border-border text-muted-foreground/40 cursor-not-allowed line-through" :
@@ -265,19 +275,38 @@ export default function ProductDetail() {
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 mb-8 mt-4">
             <button
-              onClick={() => { addToCart(productWithSelection); navigate("/cart"); }}
+              onClick={() => {
+                if (!selectedSize) {
+                  setSizeError(true);
+                  return;
+                }
+                setSizeError(false);
+                addToCart(productWithSelection);
+                navigate("/cart");
+              }}
               disabled={selectedSize && product.stock && (product.stock[selectedSize] || 0) === 0}
               className="flex-1 bg-ink text-cream py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-crimson transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add to Cart
             </button>
             <button
-              onClick={() => { buyNow(productWithSelection); navigate("/checkout"); }}
+              onClick={() => {
+                if (!selectedSize) {
+                  setSizeError(true);
+                  return;
+                }
+                setSizeError(false);
+                buyNow(productWithSelection);
+                navigate("/checkout");
+              }}
               disabled={selectedSize && product.stock && (product.stock[selectedSize] || 0) === 0}
               className="flex-1 border-2 border-ink py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-ink hover:text-cream transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Buy Now
             </button>
+            {sizeError && (
+              <p className="text-[11px] text-crimson mt-2">Please select a size</p>
+            )}
           </div>
 
           {/* Trust */}

@@ -1,10 +1,16 @@
 import { parsePrice } from "@/data/products";
-import { Clock, MapPin, CreditCard, Package, User } from "lucide-react";
+import { ReturnPhotoGallery } from "@/components/ReturnPhotos";
+import { Clock, MapPin, CreditCard, Package, User, Camera, AlertCircle } from "lucide-react";
 
 function formatShippingName(shipping) {
   if (!shipping) return "—";
   const name = [shipping.firstName, shipping.lastName].filter(Boolean).join(" ");
   return name || shipping.name || "—";
+}
+
+function formatCustomerName(order) {
+  if (order.customerName) return order.customerName;
+  return formatShippingName(order.shipping);
 }
 
 function formatShippingAddress(shipping) {
@@ -36,9 +42,9 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
               <User size={12} /> Customer
             </p>
-            <p className="text-sm text-foreground">{order.userId || "Guest"}</p>
-            {order.shipping?.email && (
-              <p className="text-xs text-muted-foreground">{order.shipping.email}</p>
+            <p className="text-sm text-foreground">{formatCustomerName(order)}</p>
+            {(order.customerEmail || order.shipping?.email) && (
+              <p className="text-xs text-muted-foreground">{order.customerEmail || order.shipping.email}</p>
             )}
           </div>
         )}
@@ -97,6 +103,45 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
           ))}
         </div>
       </div>
+
+      {(order.returnRequested || order.status === "return_requested" || (order.returnPhotos || []).length > 0) && (
+        <div className="bg-cream/60 border border-border/50 rounded-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Camera size={12} /> Return Review
+            </p>
+            {order.returnReason && (
+              <span className="text-xs text-muted-foreground max-w-[60%] truncate" title={order.returnReason}>
+                Reason: {order.returnReason}
+              </span>
+            )}
+          </div>
+
+          {(order.returnPhotos || []).length > 0 ? (
+            <>
+              <ReturnPhotoGallery
+                photos={order.returnPhotos}
+                title={`Customer photos${order.status === "returned" || order.returnPhotosReviewed ? " (reviewed)" : " — review before confirming"}`}
+              />
+              {order.returnPhotosDate && (
+                <p className="text-[10px] text-muted-foreground mt-2 font-mono">
+                  Uploaded {new Date(order.returnPhotosDate).toLocaleString()}
+                </p>
+              )}
+              {order.status !== "returned" && !order.returnPhotosReviewed && (
+                <p className="text-[11px] text-emerald-700 mt-2 flex items-center gap-1.5">
+                  <AlertCircle size={12} /> Zoom in to inspect the item condition, then confirm the return below.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2.5">
+              <AlertCircle size={14} />
+              <span>Waiting for the customer to upload return item photos. Return cannot be confirmed until photos are received.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-6 text-sm">
         {order.subtotal != null && (

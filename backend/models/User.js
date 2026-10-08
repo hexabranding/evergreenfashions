@@ -23,7 +23,7 @@ const vendorStoreSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   _id: { type: String },
   firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
+  lastName: { type: String, default: '' },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['customer', 'vendor', 'admin'], default: 'customer' },

@@ -18,6 +18,7 @@ const productSchema = new mongoose.Schema({
   vendorId: { type: String },
   img: { type: String, default: '/assets/dress-hero.png' },
   images: [{ type: String }],
+  colorImages: { type: mongoose.Schema.Types.Mixed, default: {} },
   rentalAvailable: { type: Boolean, default: false },
   rentalPricePerDay: { type: Number, default: 0 },
   rentalDeposit: { type: Number, default: 100 },

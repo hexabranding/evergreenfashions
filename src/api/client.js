@@ -24,8 +24,14 @@ async function request(endpoint, options = {}) {
   } finally {
     window.clearTimeout(requestTimeout);
   }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* error page or empty body — handled below */
+  }
+  if (!res.ok) throw new Error(data?.error || `${res.status} ${res.statusText || "Request failed"}`);
+  if (data === null) throw new Error("Empty response from server");
   return data;
 }
 

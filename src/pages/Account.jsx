@@ -14,11 +14,14 @@ import {
   Star,
   Calendar,
   Lock,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import { authApi } from "@/api/auth";
+import { ReturnPhotoGallery, ReturnPhotoUploader } from "@/components/ReturnPhotos";
+import { compressImage, MAX_RETURN_PHOTOS } from "@/lib/image";
 import { parsePrice } from "@/data/products";
 
 const tabs = [
@@ -46,6 +49,9 @@ const statusColors = {
 
 const statusSteps = ["confirmed", "preparing", "shipped", "delivered"];
 
+const hasReturnPhotos = (order) => (order?.returnPhotos || []).length > 0;
+const isReturnPending = (order) => !!order?.returnRequested || order?.status === "return_requested";
+
 const fadeSlide = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
@@ -65,7 +71,7 @@ const listItem = {
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
   const { wishlist, toggleWishlist, addToCart } = useCart();
-  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, rentalStatusSteps } = useOrders();
+  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, uploadReturnPhotos, rentalStatusSteps } = useOrders();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("profile");
@@ -99,6 +105,11 @@ export default function Account() {
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [returnOrderId, setReturnOrderId] = useState(null);
   const [returnReason, setReturnReason] = useState("");
+  const [returnStep, setReturnStep] = useState(1);
+  const [returnPhotos, setReturnPhotos] = useState([]);
+  const [returnRequestSent, setReturnRequestSent] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   useEffect(() => {
     if (!user) navigate("/login", { replace: true });
@@ -145,6 +156,103 @@ export default function Account() {
   const handleProfileSave = () => {
     updateProfile(profileForm);
     setEditingProfile(false);
+  };
+
+  const collectPhotos = async (files, existing, limit = MAX_RETURN_PHOTOS) => {
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      const room = limit - existing.length;
+      if (room <= 0) {
+        setPhotoError(`You can upload up to ${limit} photos.`);
+        return existing;
+      }
+      const accepted = files.slice(0, room);
+      if (files.length > accepted.length) {
+        setPhotoError(`Only ${limit} photos allowed — extra files were skipped.`);
+      }
+      const converted = [];
+      for (const file of accepted) {
+        converted.push(await compressImage(file));
+      }
+      return [...existing, ...converted];
+    } catch (err) {
+      setPhotoError(err.message || "Could not add that photo");
+      return existing;
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const openReturnModal = (orderId) => {
+    setReturnOrderId(orderId);
+    setReturnReason("");
+    setReturnPhotos([]);
+    setReturnStep(1);
+    setReturnRequestSent(false);
+    setPhotoError("");
+  };
+
+  const closeReturnModal = () => {
+    if (photoBusy) return;
+    setReturnOrderId(null);
+    setReturnReason("");
+    setReturnPhotos([]);
+    setReturnStep(1);
+    setReturnRequestSent(false);
+    setPhotoError("");
+  };
+
+  const formatUploadError = (err) => {
+    const msg = err?.message || "Upload failed. Please try again.";
+    const hint = /^\d{3}\b/.test(msg)
+      ? " — the backend rejected this. Make sure the server is running the latest code."
+      : "";
+    return `${msg}${hint}`;
+  };
+
+  const submitReturnRequest = async () => {
+    if (returnPhotos.length === 0 || photoBusy) return;
+    setPhotoBusy(true);
+    setPhotoError("");
+    let offline = false;
+    try {
+      if (!returnRequestSent) {
+        const res1 = await requestReturn(returnOrderId, returnReason);
+        offline = Boolean(res1?.offline);
+        setReturnRequestSent(true);
+      }
+      const res2 = await uploadReturnPhotos(returnOrderId, returnPhotos);
+      offline = offline || Boolean(res2?.offline);
+    } catch (err) {
+      setPhotoError(formatUploadError(err));
+      setPhotoBusy(false);
+      return;
+    }
+    setPhotoBusy(false);
+    if (offline) {
+      setPhotoError("Server unreachable — photos were saved on this device only and have not reached our team.");
+    }
+    setReturnOrderId(null);
+    setReturnReason("");
+    setReturnPhotos([]);
+    setReturnStep(1);
+    setReturnRequestSent(false);
+  };
+
+  const handleInlinePhotos = async (orderId, files) => {
+    const order = orders.find((o) => o.id === orderId);
+    const existing = order?.returnPhotos || [];
+    const next = await collectPhotos(files, existing);
+    if (next.length === existing.length) return;
+    try {
+      const { offline } = await uploadReturnPhotos(orderId, next.slice(existing.length));
+      setPhotoError(
+        offline ? "Server unreachable — photos were saved on this device only and have not reached our team." : ""
+      );
+    } catch (err) {
+      setPhotoError(formatUploadError(err));
+    }
   };
 
   const handleAddressSubmit = (e) => {
@@ -491,15 +599,40 @@ export default function Account() {
                       >
                         <button
                           onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
-                          className="w-full p-5 flex flex-col sm:flex-row sm:items-center gap-3 text-left hover:bg-secondary/80 transition-colors"
+                          className="w-full p-5 flex flex-col sm:flex-row sm:items-center gap-4 text-left hover:bg-secondary/80 transition-colors"
                         >
+                          <div className="flex items-center gap-3">
+                            {order.items.slice(0, 3).map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="w-12 h-14 bg-background rounded-sm overflow-hidden flex-shrink-0 border border-border/40 -ml-2 first:ml-0"
+                              >
+                                {(item.img || item.image) ? (
+                                  <img
+                                    src={item.img || item.image}
+                                    alt={item.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Package size={14} className="text-muted-foreground/50" />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {order.items.length > 3 && (
+                              <div className="w-12 h-14 bg-background rounded-sm flex items-center justify-center flex-shrink-0 border border-border/40 -ml-2">
+                                <span className="text-[10px] text-muted-foreground font-medium">+{order.items.length - 3}</span>
+                              </div>
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-1">
                               <span className="text-sm font-medium text-foreground">
                                 Order #{order.id}
                               </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusColors[order.status] || "bg-gray-100 text-gray-600"}`}>
-                                {order.status}
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-medium ${statusColors[order.status] || "bg-gray-100 text-gray-600"}`}>
+                                {order.status?.replace("_", " ")}
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -508,15 +641,15 @@ export default function Account() {
                                 month: "long",
                                 day: "numeric",
                               })}
+                              <span className="mx-1.5">·</span>
+                              {order.items.length} item{order.items.length !== 1 ? "s" : ""}
                             </p>
                           </div>
                           <div className="flex items-center gap-4">
-                            <p className="text-sm text-foreground font-medium">
-                              {order.items.length} item{order.items.length !== 1 ? "s" : ""}
-                            </p>
-                            <p className="text-sm font-medium text-foreground">
+                            <p className="text-sm font-semibold text-foreground">
                               {parsePrice(order.total)}
                             </p>
+                            <ChevronDown size={16} className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                           </div>
                         </button>
 
@@ -562,22 +695,41 @@ export default function Account() {
                                 {/* Order Items */}
                                 <div className="space-y-3 mb-4">
                                   {order.items.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-3">
-                                      <div className="w-12 h-14 bg-background rounded-sm overflow-hidden flex-shrink-0">
-                                        {item.image && (
+                                    <div key={idx} className="flex items-center gap-4 bg-background/50 rounded-sm p-3">
+                                      <div className="w-16 h-20 bg-secondary rounded-sm overflow-hidden flex-shrink-0 border border-border/40">
+                                        {(item.img || item.image) ? (
                                           <img
-                                            src={item.image}
+                                            src={item.img || item.image}
                                             alt={item.name}
                                             className="w-full h-full object-cover"
                                           />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center">
+                                            <Package size={20} className="text-muted-foreground/50" />
+                                          </div>
                                         )}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-foreground truncate">{item.name}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          Qty: {item.quantity}{(item.selectedSize || item.size) && ` · Size: ${item.selectedSize || item.size}`}{(item.selectedColor || item.color) && ` · ${item.selectedColor || item.color}`} · {parsePrice(item.price)}
+                                        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                          Qty: {item.qty ?? item.quantity}
                                         </p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          {(item.selectedSize || item.size) && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border/60 rounded text-muted-foreground">
+                                              Size: {item.selectedSize || item.size}
+                                            </span>
+                                          )}
+                                          {(item.selectedColor || item.color) && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border/60 rounded text-muted-foreground">
+                                              {item.selectedColor || item.color}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
+                                      <p className="text-sm font-medium text-foreground whitespace-nowrap">
+                                        {parsePrice(typeof item.price === "number" ? item.price * (item.qty ?? item.quantity ?? 1) : item.price)}
+                                      </p>
                                     </div>
                                   ))}
                                 </div>
@@ -608,6 +760,34 @@ export default function Account() {
                                   </div>
                                 )}
 
+                                {(isReturnPending(order) || hasReturnPhotos(order)) && (
+                                  <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground">Return Item Photos</h4>
+                                      {isReturnPending(order) && !hasReturnPhotos(order) && (
+                                        <span className="text-[11px] text-amber-600 font-medium">At least 1 photo required</span>
+                                      )}
+                                    </div>
+                                    {hasReturnPhotos(order) && (
+                                      <div className="mb-3">
+                                        <ReturnPhotoGallery
+                                          photos={order.returnPhotos}
+                                          title={order.status === "returned" ? "Photos (reviewed by our team)" : "Uploaded photos"}
+                                        />
+                                      </div>
+                                    )}
+                                    {isReturnPending(order) && (
+                                      <ReturnPhotoUploader
+                                        photos={order.returnPhotos || []}
+                                        onFiles={(files) => handleInlinePhotos(order.id, files)}
+                                        uploading={photoBusy}
+                                        hint="Tap a photo to enlarge. Our team reviews these before confirming your return."
+                                      />
+                                    )}
+                                    {photoError && <p className="text-[11px] text-crimson mt-1">{photoError}</p>}
+                                  </div>
+                                )}
+
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
@@ -623,14 +803,18 @@ export default function Account() {
                                     )}
                                     {order.status === "delivered" && !order.returnRequested && (
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setReturnOrderId(order.id); setReturnReason(""); }}
+                                        onClick={(e) => { e.stopPropagation(); openReturnModal(order.id); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
                                       >
                                         Request Return
                                       </button>
                                     )}
                                     {order.status === "return_requested" && (
-                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Confirmation</span>
+                                      hasReturnPhotos(order) ? (
+                                        <span className="text-xs text-emerald-600 font-medium">Return Photos Uploaded — Awaiting Confirmation</span>
+                                      ) : (
+                                        <span className="text-xs text-amber-600 font-medium">Return Requested — Upload Item Photos</span>
+                                      )
                                     )}
                                   </div>
                                 </div>
@@ -673,14 +857,39 @@ export default function Account() {
                       >
                         <button
                           onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
-                          className="w-full p-5 flex flex-col sm:flex-row sm:items-center gap-3 text-left hover:bg-secondary/80 transition-colors"
+                          className="w-full p-5 flex flex-col sm:flex-row sm:items-center gap-4 text-left hover:bg-secondary/80 transition-colors"
                         >
+                          <div className="flex items-center gap-3">
+                            {order.items.slice(0, 3).map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="w-12 h-14 bg-background rounded-sm overflow-hidden flex-shrink-0 border border-border/40 -ml-2 first:ml-0"
+                              >
+                                {(item.img || item.image) ? (
+                                  <img
+                                    src={item.img || item.image}
+                                    alt={item.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Package size={14} className="text-muted-foreground/50" />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {order.items.length > 3 && (
+                              <div className="w-12 h-14 bg-background rounded-sm flex items-center justify-center flex-shrink-0 border border-border/40 -ml-2">
+                                <span className="text-[10px] text-muted-foreground font-medium">+{order.items.length - 3}</span>
+                              </div>
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-1">
                               <span className="text-sm font-medium text-foreground">
                                 Rental #{order.id}
                               </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusColors[order.rentalStatus || order.status] || "bg-gray-100 text-gray-600"}`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-medium ${statusColors[order.rentalStatus || order.status] || "bg-gray-100 text-gray-600"}`}>
                                 {(order.rentalStatus || order.status)?.replace("_", " ")}
                               </span>
                             </div>
@@ -690,15 +899,15 @@ export default function Account() {
                                 month: "long",
                                 day: "numeric",
                               })}
+                              <span className="mx-1.5">·</span>
+                              {order.items.length} item{order.items.length !== 1 ? "s" : ""}
                             </p>
                           </div>
                           <div className="flex items-center gap-4">
-                            <p className="text-sm text-foreground font-medium">
-                              {order.items.length} item{order.items.length !== 1 ? "s" : ""}
-                            </p>
-                            <p className="text-sm font-medium text-foreground">
+                            <p className="text-sm font-semibold text-foreground">
                               {parsePrice(order.total)}
                             </p>
+                            <ChevronDown size={16} className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                           </div>
                         </button>
 
@@ -804,22 +1013,41 @@ export default function Account() {
                                 {/* Order Items */}
                                 <div className="space-y-3 mb-4">
                                   {order.items.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-3">
-                                      <div className="w-12 h-14 bg-background rounded-sm overflow-hidden flex-shrink-0">
-                                        {item.image && (
+                                    <div key={idx} className="flex items-center gap-4 bg-background/50 rounded-sm p-3">
+                                      <div className="w-16 h-20 bg-secondary rounded-sm overflow-hidden flex-shrink-0 border border-border/40">
+                                        {(item.img || item.image) ? (
                                           <img
-                                            src={item.image}
+                                            src={item.img || item.image}
                                             alt={item.name}
                                             className="w-full h-full object-cover"
                                           />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center">
+                                            <Package size={20} className="text-muted-foreground/50" />
+                                          </div>
                                         )}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-foreground truncate">{item.name}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          Qty: {item.quantity}{(item.selectedSize || item.size) && ` · Size: ${item.selectedSize || item.size}`}{(item.selectedColor || item.color) && ` · ${item.selectedColor || item.color}`} · {parsePrice(item.price)}
+                                        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                          Qty: {item.qty ?? item.quantity}
                                         </p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          {(item.selectedSize || item.size) && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border/60 rounded text-muted-foreground">
+                                              Size: {item.selectedSize || item.size}
+                                            </span>
+                                          )}
+                                          {(item.selectedColor || item.color) && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border/60 rounded text-muted-foreground">
+                                              {item.selectedColor || item.color}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
+                                      <p className="text-sm font-medium text-foreground whitespace-nowrap">
+                                        {parsePrice(typeof item.price === "number" ? item.price * (item.qty ?? item.quantity ?? 1) : item.price)}
+                                      </p>
                                     </div>
                                   ))}
                                 </div>
@@ -850,6 +1078,34 @@ export default function Account() {
                                   </div>
                                 )}
 
+                                {(isReturnPending(order) || hasReturnPhotos(order)) && (
+                                  <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground">Return Item Photos</h4>
+                                      {isReturnPending(order) && !hasReturnPhotos(order) && (
+                                        <span className="text-[11px] text-amber-600 font-medium">At least 1 photo required</span>
+                                      )}
+                                    </div>
+                                    {hasReturnPhotos(order) && (
+                                      <div className="mb-3">
+                                        <ReturnPhotoGallery
+                                          photos={order.returnPhotos}
+                                          title={order.status === "returned" ? "Photos (reviewed by our team)" : "Uploaded photos"}
+                                        />
+                                      </div>
+                                    )}
+                                    {isReturnPending(order) && (
+                                      <ReturnPhotoUploader
+                                        photos={order.returnPhotos || []}
+                                        onFiles={(files) => handleInlinePhotos(order.id, files)}
+                                        uploading={photoBusy}
+                                        hint="Tap a photo to enlarge. Our team reviews these before inspecting your return."
+                                      />
+                                    )}
+                                    {photoError && <p className="text-[11px] text-crimson mt-1">{photoError}</p>}
+                                  </div>
+                                )}
+
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
@@ -865,14 +1121,18 @@ export default function Account() {
                                     )}
                                     {order.status === "delivered" && !order.returnRequested && (
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setReturnOrderId(order.id); setReturnReason(""); }}
+                                        onClick={(e) => { e.stopPropagation(); openReturnModal(order.id); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
                                       >
                                         Request Return
                                       </button>
                                     )}
                                     {order.returnRequested && (
-                                      <span className="text-xs text-amber-600 font-medium">Return Requested — Awaiting Inspection</span>
+                                      hasReturnPhotos(order) ? (
+                                        <span className="text-xs text-emerald-600 font-medium">Return Photos Uploaded — Awaiting Inspection</span>
+                                      ) : (
+                                        <span className="text-xs text-amber-600 font-medium">Return Requested — Upload Item Photos</span>
+                                      )
                                     )}
                                   </div>
                                 </div>
@@ -1203,7 +1463,7 @@ export default function Account() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4"
-            onClick={() => setReturnOrderId(null)}
+            onClick={closeReturnModal}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -1213,35 +1473,86 @@ export default function Account() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 space-y-4">
-                <h3 className="font-serif text-lg text-foreground">Request Return</h3>
-                <p className="text-sm text-muted-foreground">
-                  Please provide a reason for returning this order. Our team will review your request.
-                </p>
-                <textarea
-                  value={returnReason}
-                  onChange={(e) => setReturnReason(e.target.value)}
-                  placeholder="Reason for return..."
-                  rows={3}
-                  className="w-full bg-secondary border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors resize-none"
-                />
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif text-lg text-foreground">Request Return</h3>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Step {returnStep} of 2</span>
+                </div>
+
+                <div className="flex gap-2" aria-hidden="true">
+                  <span className={`h-0.5 flex-1 transition-colors ${returnStep >= 1 ? "bg-ink" : "bg-border"}`} />
+                  <span className={`h-0.5 flex-1 transition-colors ${returnStep >= 2 ? "bg-ink" : "bg-border"}`} />
+                </div>
+
+                {returnStep === 1 ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Tell us why you are returning this order. In the next step you will add photos of the item so our team can review it quickly.
+                    </p>
+                    <textarea
+                      value={returnReason}
+                      onChange={(e) => setReturnReason(e.target.value)}
+                      placeholder="Reason for return..."
+                      rows={3}
+                      className="w-full bg-secondary border border-border rounded-sm px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ink transition-colors resize-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Upload clear photos of the item you are sending back. Your return is confirmed only after our team reviews these photos.
+                    </p>
+                    <ReturnPhotoUploader
+                      photos={returnPhotos}
+                      onFiles={async (files) => {
+                        const next = await collectPhotos(files, returnPhotos);
+                        setReturnPhotos(next);
+                      }}
+                      onRemove={(idx) => setReturnPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                      uploading={photoBusy}
+                      hint="Front, back, label and any damage. JPEG, PNG or WebP — max 5MB each."
+                    />
+                    {photoError && <p className="text-xs text-crimson">{photoError}</p>}
+                    {returnPhotos.length === 0 && !photoBusy && (
+                      <p className="text-xs text-amber-600">Add at least one photo to submit your return request.</p>
+                    )}
+                  </div>
+                )}
               </div>
+
               <div className="flex border-t border-border">
-                <button
-                  onClick={() => setReturnOrderId(null)}
-                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    requestReturn(returnOrderId, returnReason);
-                    setReturnOrderId(null);
-                    setReturnReason("");
-                  }}
-                  className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-crimson hover:bg-crimson/5 transition-colors border-l border-border"
-                >
-                  Confirm Return
-                </button>
+                {returnStep === 1 ? (
+                  <>
+                    <button
+                      onClick={closeReturnModal}
+                      className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => setReturnStep(2)}
+                      className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-ink hover:bg-ink/5 transition-colors border-l border-border"
+                    >
+                      Continue
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setReturnStep(1)}
+                      disabled={photoBusy}
+                      className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors disabled:opacity-40"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={submitReturnRequest}
+                      disabled={returnPhotos.length === 0 || photoBusy}
+                      className="flex-1 px-4 py-3 text-xs uppercase tracking-widest text-crimson hover:bg-crimson/5 transition-colors border-l border-border disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {photoBusy ? "Submitting..." : photoError ? "Try Again" : "Submit Return Request"}
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </motion.div>

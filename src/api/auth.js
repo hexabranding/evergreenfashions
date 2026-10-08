@@ -12,8 +12,8 @@ export const authApi = {
     return res;
   },
   requestPhoneOtp: (phone) => api.post("/auth/phone-otp/request", { phone }),
-  verifyPhoneOtp: async (phone, otp) => {
-    const res = await api.post("/auth/phone-otp/verify", { phone, otp });
+  verifyPhoneOtp: async (phone, otp, profile = {}) => {
+    const res = await api.post("/auth/phone-otp/verify", { phone, otp, ...profile });
     setToken(res.token);
     return res;
   },
@@ -27,6 +27,7 @@ export const authApi = {
   admin: {
     getUsers: () => api.get("/auth/users"),
     getUser: (id) => api.get(`/auth/users/${id}`),
+    createVendor: (data) => api.post("/auth/register-vendor", data),
     createUser: (data) => api.post("/auth/register", data),
     updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
     resetPassword: (id, newPassword) => api.put(`/auth/users/${id}/reset-password`, { newPassword }),

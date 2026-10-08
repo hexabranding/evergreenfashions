@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone } from "lucide-react";
+import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone, Mail, Eye, EyeOff, ArrowRight, User } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { parsePrice } from "@/data/products";
 import { useAuth } from "@/context/AuthContext";
@@ -16,9 +16,21 @@ function formatPrice(val) {
 export default function Checkout() {
   const { cartItems, cartSubtotal, cartTotal, placeOrder, coupon, discount, freeShipping } = useCart();
   const navigate = useNavigate();
-  const { isAuthenticated, requestPhoneLogin, currentUser } = useAuth();
+  const { isAuthenticated, requestPhoneLogin, currentUser, login, register } = useAuth();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
+  const [authMode, setAuthMode] = useState("login");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [auth, setAuth] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
+
   const [shipping, setShipping] = useState({
     firstName: "",
     lastName: "",
@@ -37,10 +49,153 @@ export default function Checkout() {
     upiId: "",
   });
 
-  useEffect(() => { if (!isAuthenticated) requestPhoneLogin(); }, [isAuthenticated, requestPhoneLogin]);
   useEffect(() => { if (currentUser) setShipping((previous) => ({ ...previous, firstName: previous.firstName || currentUser.firstName || "", lastName: previous.lastName || currentUser.lastName || "", email: previous.email || currentUser.email || "" })); }, [currentUser]);
 
-  if (!isAuthenticated) return <section className="max-w-xl mx-auto px-8 py-24 min-h-[60vh] text-center"><Smartphone className="w-8 h-8 mx-auto mb-4 text-crimson" /><h1 className="font-serif text-3xl mb-3">Sign in to checkout</h1><p className="text-muted-foreground">Please verify your phone number with an OTP to continue.</p></section>;
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+
+    if (authMode === "register") {
+      if (!auth.firstName.trim() || !auth.lastName.trim()) return setAuthError("Name is required");
+      if (!auth.email.trim() || !auth.email.includes("@")) return setAuthError("Valid email required");
+      if (auth.password.length < 6) return setAuthError("Password must be at least 6 characters");
+      if (auth.password !== auth.confirmPassword) return setAuthError("Passwords do not match");
+
+      setAuthLoading(true);
+      const result = await register({ firstName: auth.firstName.trim(), lastName: auth.lastName.trim(), email: auth.email.trim(), password: auth.password, role: "customer" });
+      setAuthLoading(false);
+      if (!result.success) return setAuthError(result.error);
+      return;
+    }
+
+    if (!auth.email.trim()) return setAuthError("Email is required");
+    if (!auth.password) return setAuthError("Password is required");
+
+    setAuthLoading(true);
+    const result = await login(auth.email.trim(), auth.password);
+    setAuthLoading(false);
+    if (!result.success) return setAuthError(result.error);
+  };
+
+  const authField = "w-full bg-transparent border border-border px-10 py-3 text-sm focus:outline-none focus:border-foreground transition-colors placeholder:text-muted-foreground/50";
+  const authLabel = "eyebrow block";
+
+  if (!isAuthenticated) {
+    const isRegister = authMode === "register";
+    return (
+      <section className="max-w-[1600px] mx-auto px-8 py-16 min-h-[70vh] flex items-start justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="w-full max-w-md"
+        >
+          <div className="text-center mb-8">
+            <p className="eyebrow mb-3">— Checkout</p>
+            <h1 className="text-display text-4xl mb-2">
+              {isRegister ? <>Create <em className="text-crimson">account.</em></> : <>Sign <em className="text-crimson">in.</em></>}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {isRegister ? "New customer — create an account to continue your order" : "Customer login to continue to checkout"}
+            </p>
+          </div>
+
+          <form onSubmit={handleAuthSubmit} className="border border-border p-6 md:p-8 space-y-5">
+            {authError && (
+              <div className="bg-crimson/10 border border-crimson/20 px-4 py-3 text-sm text-crimson">{authError}</div>
+            )}
+
+            {isRegister && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className={authLabel}>First Name <span className="text-crimson">*</span></label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input type="text" value={auth.firstName} onChange={(e) => setAuth({ ...auth, firstName: e.target.value })} placeholder="First" className={authField} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className={authLabel}>Last Name <span className="text-crimson">*</span></label>
+                  <input type="text" value={auth.lastName} onChange={(e) => setAuth({ ...auth, lastName: e.target.value })} placeholder="Last" className="w-full bg-transparent border border-border px-4 py-3 text-sm focus:outline-none focus:border-foreground transition-colors placeholder:text-muted-foreground/50" />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className={authLabel}>Email <span className="text-crimson">*</span></label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input type="email" value={auth.email} onChange={(e) => setAuth({ ...auth, email: e.target.value })} placeholder="your@email.com" className={authField} />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className={authLabel}>Password <span className="text-crimson">*</span></label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input type={showPassword ? "text" : "password"} value={auth.password} onChange={(e) => setAuth({ ...auth, password: e.target.value })} placeholder="••••••••" className={authField} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {isRegister && (
+              <div className="space-y-2">
+                <label className={authLabel}>Confirm Password <span className="text-crimson">*</span></label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input type={showPassword ? "text" : "password"} value={auth.confirmPassword} onChange={(e) => setAuth({ ...auth, confirmPassword: e.target.value })} placeholder="••••••••" className={authField} />
+                </div>
+                {auth.confirmPassword && auth.password !== auth.confirmPassword && (
+                  <p className="text-[10px] tracking-wider uppercase text-crimson">Passwords do not match</p>
+                )}
+              </div>
+            )}
+
+            <button type="submit" disabled={authLoading} className="btn-ink btn-ink-hover w-full justify-center group disabled:opacity-60">
+              {authLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  {isRegister ? "Creating account..." : "Signing in..."}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  {isRegister ? "Create Account" : "Sign In"}
+                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                </span>
+              )}
+            </button>
+          </form>
+
+          <div className="text-center mt-6">
+            <p className="text-sm text-muted-foreground">
+              {isRegister ? "Already have an account?" : "New customer?"}{" "}
+              <button
+                type="button"
+                onClick={() => { setAuthMode(isRegister ? "login" : "register"); setAuthError(""); }}
+                className="text-foreground hover:text-crimson transition-colors underline underline-offset-4 cursor-pointer"
+              >
+                {isRegister ? "Sign in" : "Create an account"}
+              </button>
+            </p>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-border text-center">
+            <button
+              type="button"
+              onClick={() => requestPhoneLogin()}
+              className="inline-flex items-center gap-2 text-[11px] tracking-[0.2em] uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              Continue with phone OTP
+            </button>
+          </div>
+        </motion.div>
+      </section>
+    );
+  }
+
 
   if (cartItems.length === 0 && step === 0) {
     return (

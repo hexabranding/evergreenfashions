@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, User, Store } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 function getPasswordStrength(password) {
@@ -29,8 +29,6 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [role, setRole] = useState("customer");
-  const [storeName, setStoreName] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -57,10 +55,6 @@ export default function Register() {
       setError("Passwords do not match");
       return;
     }
-    if (role === "vendor" && !storeName.trim()) {
-      setError("Store name is required for vendors");
-      return;
-    }
     if (!agreedToTerms) {
       setError("You must agree to the Terms of Service");
       return;
@@ -73,8 +67,7 @@ export default function Register() {
       lastName,
       email,
       password,
-      role,
-      ...(role === "vendor" && { vendorStore: { name: storeName } }),
+      role: "customer",
     });
     setLoading(false);
 
@@ -121,61 +114,17 @@ export default function Register() {
             )}
 
             <div className="space-y-2">
-              <label className="eyebrow">I want to</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRole("customer")}
-                  className={`p-4 border text-left transition-all ${
-                    role === "customer"
-                      ? "bg-foreground text-background border-foreground"
-                      : "border-border hover:border-foreground"
-                  }`}
-                >
-                  <User className={`w-5 h-5 mb-2 ${role === "customer" ? "text-background" : "text-muted-foreground"}`} />
+              <label className="eyebrow">Account Type</label>
+              <div className="p-4 border bg-secondary/50 border-border flex items-center gap-3">
+                <User className="w-5 h-5 text-muted-foreground" />
+                <div>
                   <div className="font-serif text-sm">Shop</div>
-                  <div className={`text-[10px] tracking-wider uppercase mt-1 ${role === "customer" ? "text-background/70" : "text-muted-foreground"}`}>
-                    Customer
+                  <div className="text-[10px] tracking-wider uppercase mt-1 text-muted-foreground">
+                    Customer — buy products, track orders, rentals
                   </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRole("vendor")}
-                  className={`p-4 border text-left transition-all ${
-                    role === "vendor"
-                      ? "bg-foreground text-background border-foreground"
-                      : "border-border hover:border-foreground"
-                  }`}
-                >
-                  <Store className={`w-5 h-5 mb-2 ${role === "vendor" ? "text-background" : "text-muted-foreground"}`} />
-                  <div className="font-serif text-sm">Sell</div>
-                  <div className={`text-[10px] tracking-wider uppercase mt-1 ${role === "vendor" ? "text-background/70" : "text-muted-foreground"}`}>
-                    Want to Sell
-                  </div>
-                </button>
+                </div>
               </div>
             </div>
-
-            {role === "vendor" && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-2"
-              >
-                <label className="eyebrow">Store Name</label>
-                <div className="relative">
-                  <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    value={storeName}
-                    onChange={(e) => setStoreName(e.target.value)}
-                    placeholder="Your store name"
-                    className="w-full bg-transparent border border-border px-10 py-3 text-sm focus:outline-none focus:border-foreground transition-colors placeholder:text-muted-foreground/50"
-                  />
-                </div>
-              </motion.div>
-            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

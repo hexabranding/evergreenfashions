@@ -26,7 +26,7 @@ export default function AdvertisementSlider() {
       <AnimatePresence mode="wait"><motion.div key={current._id || current.id || current.title} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.55 }} className="absolute inset-0">
         <img src={current.image} alt={current.title} className="w-full h-full object-cover object-center" />
         <div className="absolute inset-0 bg-gradient-to-r from-ink/85 via-ink/45 to-transparent" />
-        <div className="absolute inset-0 flex items-center"><div className="max-w-[1600px] mx-auto px-8 w-full"><div className="max-w-lg">
+        <div className="absolute inset-0 flex items-center"><div className="max-w-[1600px] mx-auto px-8 w-full"><div className="max-w-lg lg:ml-12">
           <p className="eyebrow mb-3 text-blush/80">— Featured promotion</p>
           <h2 className="text-display text-4xl md:text-6xl text-cream leading-tight">{current.title}<br />{current.subtitle && <em className="text-blush">{current.subtitle}</em>}</h2>
           <Link to={current.link || "/collection"} className="inline-flex items-center gap-3 bg-cream text-ink px-8 py-3 mt-8 text-[10px] tracking-[0.25em] uppercase hover:bg-blush transition-colors">{current.buttonText || "Shop Now"} <ArrowRight className="w-4 h-4" /></Link>

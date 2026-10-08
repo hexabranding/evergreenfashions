@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { authApi } from "@/api/auth";
+import { isOfflineError } from "@/lib/utils";
 import PhoneOtpDialog from "@/components/PhoneOtpDialog";
 
 const AuthContext = createContext();
@@ -113,39 +114,27 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(
     async ({ firstName, lastName, email, password, role = "customer", vendorStore }) => {
+      let result;
       try {
-        const result = await authApi.register({ firstName, lastName, email, password, role, vendorStore });
-        const apiUser = { ...result.user, id: result.user._id || result.user.id };
-        setCurrentUser(apiUser);
-        setUsers((previous) => {
-          const exists = previous.some((user) => user.id === apiUser.id);
-          return exists ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser];
-        });
-        return { success: true, error: null };
-      } catch {
-        // Fallback to local registration when backend is not running
+        result = await authApi.register({ firstName, lastName, email, password, role, vendorStore });
+      } catch (err) {
+        return {
+          success: false,
+          error: isOfflineError(err)
+            ? "Could not reach the server — your account was not created. Start the backend and try again."
+            : err?.message || "Registration failed",
+        };
       }
 
-      const exists = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (exists) return { success: false, error: "Email already registered" };
-
-      const newUser = {
-        id: `user-${Date.now().toString(36)}`,
-        firstName,
-        lastName,
-        email: email.toLowerCase(),
-        password: hashPassword(password),
-        role,
-        createdAt: new Date().toISOString(),
-        addresses: [],
-        phone: "",
-      };
-
-      setUsers((prev) => [...prev, newUser]);
-      setCurrentUser(stripPassword(newUser));
+      const apiUser = { ...result.user, id: result.user._id || result.user.id };
+      setCurrentUser(apiUser);
+      setUsers((previous) => {
+        const exists = previous.some((user) => user.id === apiUser.id);
+        return exists ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser];
+      });
       return { success: true, error: null };
     },
-    [users]
+    []
   );
 
   const login = useCallback(
@@ -183,23 +172,24 @@ export function AuthProvider({ children }) {
     setPhoneAuthAction(() => onAuthenticated || (() => {}));
   }, [currentUser]);
 
-  const loginWithPhoneOtp = useCallback(async (phone, otp) => {
+  const loginWithPhoneOtp = useCallback(async (phone, otp, profile = {}) => {
+    let result;
     try {
-      const result = await authApi.verifyPhoneOtp(phone, otp);
-      const apiUser = { ...result.user, id: result.user._id || result.user.id };
-      setCurrentUser(apiUser);
-      setUsers((previous) => previous.some((user) => user.id === apiUser.id) ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser]);
-      return { success: true };
-    } catch (error) {
-      if (otp !== "123456") return { success: false, error: error.message || "Invalid OTP" };
-      const normalizedPhone = phone.replace(/\s/g, "");
-      const existing = users.find((user) => (user.phone || "").replace(/\s/g, "") === normalizedPhone);
-      const user = existing || { id: `phone-${Date.now().toString(36)}`, firstName: "Customer", lastName: "", email: `${normalizedPhone.replace(/\D/g, "")}@phone.evergreen.local`, role: "customer", phone, addresses: [], createdAt: new Date().toISOString() };
-      setUsers((previous) => existing ? previous : [...previous, user]);
-      setCurrentUser(stripPassword(user));
-      return { success: true };
+      result = await authApi.verifyPhoneOtp(phone, otp, profile);
+    } catch (err) {
+      return {
+        success: false,
+        error: isOfflineError(err)
+          ? "Could not reach the server — phone sign-in is unavailable right now."
+          : err?.message || "Invalid or expired OTP",
+      };
     }
-  }, [users]);
+    const apiUser = { ...result.user, id: result.user._id || result.user.id };
+    setCurrentUser(apiUser);
+    setUsers((previous) => previous.some((user) => user.id === apiUser.id) ? previous.map((user) => user.id === apiUser.id ? { ...user, ...apiUser } : user) : [...previous, apiUser]);
+    return { success: true };
+  }, []);
+
 
   const updateProfile = useCallback(
     (updates) => {

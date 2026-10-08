@@ -346,6 +346,7 @@ export default function VendorDashboard() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("all");
+  const [productSearch, setProductSearch] = useState("");
   const [earningsPeriod, setEarningsPeriod] = useState("7months");
 
   const [newProductForm, setNewProductForm] = useState(false);
@@ -353,7 +354,9 @@ export default function VendorDashboard() {
   const [vendorAds, setVendorAds] = useState([]);
   const [showAdForm, setShowAdForm] = useState(false);
   const [adForm, setAdForm] = useState({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
+  const [editingAdId, setEditingAdId] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
+  const productFormRef = useRef(null);
 
   const [localInventory, setLocalInventory] = useState({});
   const [expandedOrder, setExpandedOrder] = useState(null);
@@ -375,7 +378,11 @@ export default function VendorDashboard() {
     if (!currentUser?.id) return;
     // Vendors use the same catalogue as the admin dashboard. Products created by an
     // admin are therefore visible immediately, even before a vendor is assigned.
-    productsApi.getAll().then((data) => setVendorProductsList(data.map((product) => ({ ...product, id: product._id || product.id, stock: Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) })))).catch(() => setVendorProductsList(allProducts.map((product) => ({ ...product, stock: product.stock || {} }))));
+    productsApi.getAll().then((data) => setVendorProductsList(
+      [...data]
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .map((product) => ({ ...product, id: product._id || product.id, stock: Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) }))
+    )).catch(() => setVendorProductsList(allProducts.map((product) => ({ ...product, stock: product.stock || {} }))));
   }, [currentUser?.id]);
 
   const handleAdImage = (file) => {
@@ -385,14 +392,39 @@ export default function VendorDashboard() {
     reader.onload = () => setAdForm((prev) => ({ ...prev, image: reader.result }));
     reader.readAsDataURL(file);
   };
+  const emptyAdForm = { title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" };
+  const closeAdForm = () => {
+    setShowAdForm(false);
+    setEditingAdId(null);
+    setAdForm(emptyAdForm);
+  };
+  const startEditAd = (ad) => {
+    setEditingAdId(ad.id);
+    setAdForm({
+      title: ad.title || "",
+      subtitle: ad.subtitle || "",
+      type: ad.type || "slide",
+      position: ad.position || "homepage-top",
+      image: ad.image || "",
+      link: ad.link || "",
+      buttonText: ad.buttonText || "Shop Now",
+      startDate: ad.startDate || "",
+      endDate: ad.endDate || "",
+    });
+    setShowAdForm(true);
+  };
   const submitAd = async () => {
     if (!adForm.title.trim() || !adForm.image) return;
     try {
-      const saved = await adsApi.create(adForm);
-      setVendorAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
-      setAdForm({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
-      setShowAdForm(false);
-    } catch (error) { alert(error.message || "Could not create advertisement."); }
+      if (editingAdId) {
+        const saved = await adsApi.update(editingAdId, adForm);
+        setVendorAds((prev) => prev.map((item) => item.id === editingAdId ? { ...saved, id: saved._id } : item));
+      } else {
+        const saved = await adsApi.create(adForm);
+        setVendorAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
+      }
+      closeAdForm();
+    } catch (error) { alert(error.message || "Could not save advertisement."); }
   };
   const updateVendorAd = async (ad) => {
     try { const saved = await adsApi.update(ad.id, { active: !ad.active }); setVendorAds((prev) => prev.map((item) => item.id === ad.id ? { ...saved, id: saved._id } : item)); }
@@ -431,6 +463,15 @@ export default function VendorDashboard() {
   const vendor = getVendorByUserId(currentUser.id) || { id: currentUser.id, userId: currentUser.id, storeName: currentUser.vendorStore?.name || `${currentUser.firstName} ${currentUser.lastName}`, description: currentUser.vendorStore?.description || "", commission: currentUser.vendorStore?.commission || 15, joinedAt: currentUser.createdAt || new Date().toISOString(), totalSales: 0, totalEarnings: 0, pendingPayout: 0 };
 
   const vendorProducts = vendorProductsList;
+
+  const filteredVendorProducts = vendorProducts.filter((p) => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.name?.toLowerCase().includes(q) ||
+      p.category?.toLowerCase().includes(q)
+    );
+  });
 
   const localVendorOrders = getOrdersByVendor(vendor.id);
   const vendorOrders = useMemo(() => {
@@ -588,6 +629,7 @@ export default function VendorDashboard() {
   const handleAddProduct = () => {
     setEditingProduct(null);
     setNewProductForm(true);
+    setTimeout(() => productFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
   };
 
   const handleEditProduct = (product) => {
@@ -595,6 +637,7 @@ export default function VendorDashboard() {
     setNewProductForm(true);
     setActiveTab("products");
     setExpandedProduct(null);
+    setTimeout(() => productFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
   };
 
   const handleSaveNewProduct = async (product) => {
@@ -609,6 +652,7 @@ export default function VendorDashboard() {
       sizes: product.sizes,
       img: product.img,
       images: product.images,
+      colorImages: product.colorImages,
       inventory,
       rentalAvailable: product.rentalAvailable,
       rentalPricePerDay: product.rentalPricePerDay,
@@ -798,40 +842,54 @@ export default function VendorDashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="eyebrow">Product Listings</h2>
-        <button
-          onClick={handleAddProduct}
-          className="btn-ink px-5 py-2.5 text-xs tracking-widest uppercase flex items-center gap-2"
-        >
-          <Plus size={14} />
-          Add Product
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              className="bg-cream border border-border/60 rounded-sm pl-9 pr-4 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ink/30 w-48"
+            />
+          </div>
+          <button
+            onClick={handleAddProduct}
+            className="btn-ink px-5 py-2.5 text-xs tracking-widest uppercase flex items-center gap-2"
+          >
+            <Plus size={14} />
+            Add Product
+          </button>
+        </div>
       </div>
 
-      <AnimatePresence>
-        {newProductForm && (
-          <AddProductForm
-            categories={PRODUCT_CATEGORIES}
-            editProduct={editingProduct}
-            onSave={handleSaveNewProduct}
-            onCancel={() => {
-              setNewProductForm(false);
-              setEditingProduct(null);
-            }}
-          />
-        )}
-      </AnimatePresence>
+      <div ref={productFormRef}>
+        <AnimatePresence>
+          {newProductForm && (
+            <AddProductForm
+              categories={PRODUCT_CATEGORIES}
+              editProduct={editingProduct}
+              onSave={handleSaveNewProduct}
+              onCancel={() => {
+                setNewProductForm(false);
+                setEditingProduct(null);
+              }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
 
-      {vendorProducts.length === 0 ? (
+      {filteredVendorProducts.length === 0 ? (
         <EmptyState
           icon={Package}
-          title="No Products Yet"
-          description="Start adding your products to the marketplace."
-          action="Add First Product"
-          onAction={handleAddProduct}
+          title={productSearch ? "No Products Found" : "No Products Yet"}
+          description={productSearch ? "No products match your search." : "Start adding your products to the marketplace."}
+          action={productSearch ? undefined : "Add First Product"}
+          onAction={productSearch ? undefined : handleAddProduct}
         />
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
-          {vendorProducts.map((product) => {
+          {filteredVendorProducts.map((product) => {
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
             const isExpanded = expandedProduct === product.id;
@@ -1200,7 +1258,7 @@ export default function VendorDashboard() {
       if (o.rentalDetails) return false;
       const matchesSearch =
         (o.id || "").toLowerCase().includes(vendorOrderSearch.toLowerCase()) ||
-        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorOrderSearch.toLowerCase());
+        (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorOrderSearch.toLowerCase());
       const matchesStatus = vendorOrderStatusFilter === "All" || o.status === vendorOrderStatusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -1280,7 +1338,7 @@ export default function VendorDashboard() {
                       onClick={() => setExpandedVendorOrder(isExpanded ? null : order.id)}
                     >
                       <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
-                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {new Date(order.date || order.createdAt).toLocaleDateString()}
@@ -1311,12 +1369,18 @@ export default function VendorDashboard() {
                             <OrderDetailPanel order={order} showCustomer={true} />
                             <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
                               {order.status === "return_requested" && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
-                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
-                                >
-                                  Confirm Return & Restore Inventory
-                                </button>
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Review Photos & Confirm Return
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
                               )}
                               {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
                                 <button
@@ -1360,7 +1424,7 @@ export default function VendorDashboard() {
     const filteredVendorRentalOrders = rentalOrders.filter((o) => {
       const matchesSearch =
         (o.id || "").toLowerCase().includes(vendorRentalOrderSearch.toLowerCase()) ||
-        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorRentalOrderSearch.toLowerCase());
+        (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorRentalOrderSearch.toLowerCase());
       const matchesStatus = vendorRentalOrderStatusFilter === "All" ||
         o.status === vendorRentalOrderStatusFilter ||
         o.rentalStatus === vendorRentalOrderStatusFilter;
@@ -1446,7 +1510,7 @@ export default function VendorDashboard() {
                       onClick={() => setExpandedVendorRentalOrder(isExpanded ? null : order.id)}
                     >
                       <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
-                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
@@ -1589,12 +1653,18 @@ export default function VendorDashboard() {
                                 </>
                               )}
                               {order.status === "return_requested" && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
-                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
-                                >
-                                  Confirm Return & Restore Inventory
-                                </button>
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Review Photos & Confirm Return
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
                               )}
                               {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
                                 const currentRentalStepId = order.rentalStatus || order.status;
@@ -2225,16 +2295,21 @@ export default function VendorDashboard() {
 
   const renderAds = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Promotion tools</p><h2 className="font-serif text-2xl text-foreground mt-1">Your advertisements</h2></div><button onClick={() => setShowAdForm((show) => !show)} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest"><Plus size={14} /> New Ad</button></div>
-      {showAdForm && <div className="bg-cream border border-border p-6 space-y-4"><div className="grid sm:grid-cols-2 gap-4">
-        <input value={adForm.title} onChange={(e) => setAdForm((form) => ({ ...form, title: e.target.value }))} placeholder="Advertisement title (required)" className="px-4 py-3 bg-background border border-border text-sm" />
-        <input value={adForm.subtitle} onChange={(e) => setAdForm((form) => ({ ...form, subtitle: e.target.value }))} placeholder="Offer subtitle (optional)" className="px-4 py-3 bg-background border border-border text-sm" />
-        <select value={adForm.type} onChange={(e) => setAdForm((form) => ({ ...form, type: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="slide">Homepage Slide</option><option value="banner">Banner</option><option value="sidebar">Sidebar</option></select>
-        <input type="file" accept="image/*" onChange={(e) => handleAdImage(e.target.files?.[0])} className="px-3 py-2 bg-background border border-border text-sm" required />
-        <input value={adForm.buttonText} onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))} placeholder="Button text" className="px-4 py-3 bg-background border border-border text-sm" />
-        <input value={adForm.link} onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))} placeholder="/collection" className="px-4 py-3 bg-background border border-border text-sm" />
-      </div>{adForm.image && <img src={adForm.image} alt="Advertisement preview" className="h-36 w-56 object-cover border border-border" />}<div className="flex gap-3"><button onClick={submitAd} disabled={!adForm.title.trim() || !adForm.image} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40">Create Ad</button><button onClick={() => setShowAdForm(false)} className="px-5 py-2.5 border border-border text-xs uppercase tracking-widest">Cancel</button></div></div>}
-      <div className="grid gap-4">{vendorAds.map((ad) => { const ownedByVendor = ad.vendorId === currentUser.id; return <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p><p className="text-[10px] uppercase tracking-wider mt-2 text-muted-foreground">{ownedByVendor ? "Your campaign" : "Admin campaign"}</p></div>{ownedByVendor && <div className="flex gap-2"><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div>}</div>; })}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
+      <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Promotion tools</p><h2 className="font-serif text-2xl text-foreground mt-1">Your advertisements</h2></div><button onClick={() => (showAdForm ? closeAdForm() : setShowAdForm(true))} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest"><Plus size={14} /> New Ad</button></div>
+      {showAdForm && <div className="bg-cream border border-border p-6 space-y-4">
+        <div className="flex items-center justify-between"><p className="eyebrow">{editingAdId ? "— Edit Advertisement" : "— New Advertisement"}</p><button onClick={closeAdForm} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" title="Close"><X size={16} /></button></div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <input value={adForm.title} onChange={(e) => setAdForm((form) => ({ ...form, title: e.target.value }))} placeholder="Advertisement title (required)" className="px-4 py-3 bg-background border border-border text-sm" />
+          <input value={adForm.subtitle} onChange={(e) => setAdForm((form) => ({ ...form, subtitle: e.target.value }))} placeholder="Offer subtitle (optional)" className="px-4 py-3 bg-background border border-border text-sm" />
+          <select value={adForm.type} onChange={(e) => setAdForm((form) => ({ ...form, type: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="slide">Homepage Slide</option><option value="banner">Banner</option><option value="sidebar">Sidebar</option></select>
+          <select value={adForm.position} onChange={(e) => setAdForm((form) => ({ ...form, position: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="homepage-top">Homepage Top</option><option value="homepage-bottom">Homepage Bottom</option><option value="category-page">Category Page</option><option value="product-page">Product Page</option></select>
+          <input type="file" accept="image/*" onChange={(e) => handleAdImage(e.target.files?.[0])} className="px-3 py-2 bg-background border border-border text-sm" />
+          <input value={adForm.buttonText} onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))} placeholder="Button text" className="px-4 py-3 bg-background border border-border text-sm" />
+          <input value={adForm.link} onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))} placeholder="/collection" className="px-4 py-3 bg-background border border-border text-sm" />
+          <input type="date" value={adForm.startDate} onChange={(e) => setAdForm((form) => ({ ...form, startDate: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm" />
+          <input type="date" value={adForm.endDate} onChange={(e) => setAdForm((form) => ({ ...form, endDate: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm" />
+        </div>{adForm.image && <img src={adForm.image} alt="Advertisement preview" className="h-36 w-56 object-cover border border-border" />}<div className="flex gap-3"><button onClick={submitAd} disabled={!adForm.title.trim() || !adForm.image} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40">{editingAdId ? "Save Changes" : "Create Ad"}</button><button onClick={closeAdForm} className="px-5 py-2.5 border border-border text-xs uppercase tracking-widest">Cancel</button></div></div>}
+      <div className="grid gap-4">{vendorAds.map((ad) => { const ownedByVendor = ad.vendorId === currentUser.id; return <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p><p className="text-[10px] uppercase tracking-wider mt-2 text-muted-foreground">{ownedByVendor ? "Your campaign" : "Admin campaign"}</p></div>{<div className="flex gap-2"><button onClick={() => startEditAd(ad)} className="px-3 py-2 border border-border text-xs uppercase inline-flex items-center gap-1.5"><Edit2 size={14} /> Edit</button><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div>}</div>; })}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
     </div>
   );
 

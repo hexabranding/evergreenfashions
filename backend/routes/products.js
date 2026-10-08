@@ -43,7 +43,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
 router.post('/', authMiddleware, vendorOnly, async (req, res) => {
   try {
-    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, rentalDeposit, images, inventory: requestedInventory, vendorId: bodyVendorId } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, rentalAvailable, rentalPricePerDay, rentalDeposit, images, colorImages, inventory: requestedInventory, vendorId: bodyVendorId } = req.body;
 
     if (!name || price === undefined || price === null) {
       return res.status(400).json({ error: 'Name and price are required' });
@@ -66,6 +66,7 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
       vendorId: (req.user.role === 'admin' && bodyVendorId) ? bodyVendorId : req.user.id,
       img: img || (images?.length ? images[0] : '/assets/dress-hero.png'),
       images: images?.length ? images : [img || '/assets/dress-hero.png'],
+      colorImages: colorImages || {},
       rentalAvailable: !!rentalAvailable,
       rentalPricePerDay: rentalPricePerDay || 0,
       rentalDeposit: rentalDeposit || 100,
@@ -85,7 +86,7 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const { name, price, category, gender, colors, sizes, description, img, images, rentalAvailable, rentalPricePerDay, rentalDeposit, vendorId, inventory } = req.body;
+    const { name, price, category, gender, colors, sizes, description, img, images, colorImages, rentalAvailable, rentalPricePerDay, rentalDeposit, vendorId, inventory } = req.body;
 
     if (name !== undefined) product.name = name;
     if (price !== undefined) product.price = price;
@@ -96,6 +97,7 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
     if (description !== undefined) product.description = description;
     if (img !== undefined) product.img = img;
     if (images !== undefined) product.images = images;
+    if (colorImages !== undefined) product.colorImages = colorImages;
     if (rentalAvailable !== undefined) product.rentalAvailable = rentalAvailable;
     if (rentalPricePerDay !== undefined) product.rentalPricePerDay = rentalPricePerDay;
     if (rentalDeposit !== undefined) product.rentalDeposit = rentalDeposit;

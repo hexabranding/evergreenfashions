@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useOrders } from "@/context/OrderContext";
@@ -268,6 +268,9 @@ export default function AdminDashboard({ isVendor }) {
     inspectOrder,
     rentalStatusSteps,
     confirmReturn,
+    reviews,
+    getReviewsByProduct,
+    getAverageRating,
   } = useOrders();
 
   const isVendorPanel = isVendor || currentUser?.role === "vendor";
@@ -331,9 +334,9 @@ export default function AdminDashboard({ isVendor }) {
   });
   const [vendorSearch, setVendorSearch] = useState("");
   const [showAddVendor, setShowAddVendor] = useState(false);
-  const [newVendorForm, setNewVendorForm] = useState({
-    firstName: "", lastName: "", email: "", password: "",
-  });
+const [newVendorForm, setNewVendorForm] = useState({
+  firstName: "", lastName: "", email: "", password: "", storeName: "", description: "",
+});
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [editingVendor, setEditingVendor] = useState(null);
   const [editVendorForm, setEditVendorForm] = useState({ storeName: "", description: "", commission: 15 });
@@ -358,11 +361,14 @@ export default function AdminDashboard({ isVendor }) {
   const [previewAd, setPreviewAd] = useState(null);
   const [newAdForm, setNewAdForm] = useState({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
   const [showNewAdForm, setShowNewAdForm] = useState(false);
+  const [editingAdId, setEditingAdId] = useState(null);
+  const adFormRef = useRef(null);
   const [exporting, setExporting] = useState(false);
 
   const [productSearch, setProductSearch] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
   const [editingProduct, setEditingProduct] = useState(null);
+  const addFormRef = useRef(null);
   const [editProductForm, setEditProductForm] = useState({ name: "", category: "", price: 0, vendor: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [previewProduct, setPreviewProduct] = useState(null);
@@ -414,7 +420,11 @@ export default function AdminDashboard({ isVendor }) {
     );
     productsApi
       .getAll()
-      .then((data) => setProducts(data.map((product) => mapApiProduct(product, vendorNameById))))
+      .then((data) => setProducts(
+        [...data]
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+          .map((product) => mapApiProduct(product, vendorNameById))
+      ))
       .catch(() => setProducts(allProducts.map((product) => mapApiProduct(product, vendorNameById))));
   }, [vendors]);
 
@@ -456,7 +466,7 @@ export default function AdminDashboard({ isVendor }) {
         pendingPayout: 0,
         joinedAt: u.createdAt?.slice(0, 10) || "N/A",
       })));
-    }).catch(() => {});
+    }).catch((err) => console.error("Failed to load users:", err));
   }, []);
 
   useEffect(() => {
@@ -674,12 +684,14 @@ export default function AdminDashboard({ isVendor }) {
           commission: editVendorForm.commission,
         },
       });
-    } catch {}
-    setVendors((prev) => prev.map((v) =>
-      v.id === editingVendor ? { ...v, ...editVendorForm } : v
-    ));
-    setSelectedVendor((prev) => (prev && prev.id === editingVendor ? { ...prev, ...editVendorForm } : prev));
-    setEditingVendor(null);
+      setVendors((prev) => prev.map((v) =>
+        v.id === editingVendor ? { ...v, ...editVendorForm } : v
+      ));
+      setSelectedVendor((prev) => (prev && prev.id === editingVendor ? { ...prev, ...editVendorForm } : prev));
+      setEditingVendor(null);
+    } catch (err) {
+      alert(err.message || "Failed to update vendor");
+    }
   };
 
   const cancelEditVendor = () => {
@@ -717,24 +729,47 @@ export default function AdminDashboard({ isVendor }) {
   };
 
   const handleAddVendor = async () => {
-    const { firstName, lastName, email, password } = newVendorForm;
-    if (!firstName || !lastName || !email || !password) return;
+    const { firstName, lastName, email, password, storeName, description } = newVendorForm;
+    if (!firstName || !lastName || !email || !password) {
+      alert("Please fill all required fields (First Name, Last Name, Email, Password)");
+      return;
+    }
 
     try {
-      const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "vendor" });
+      console.log("Creating vendor:", { firstName, lastName, email, storeName, description });
+      const data = await authApi.admin.createVendor({
+        firstName, lastName, email, password,
+        vendorStore: { name: storeName || `${firstName} ${lastName}`, description: description || "" },
+      });
+      console.log("Vendor created:", data);
 
-      setVendors((prev) => [...prev, {
-        id: data._id, firstName: data.firstName, lastName: data.lastName, email: data.email,
-        storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
-        description: data.vendorStore?.description || "",
-        commission: data.vendorStore?.commission || 15,
+      const user = data.user || data;
+      const vendor = {
+        id: user._id || user.id, firstName: user.firstName, lastName: user.lastName, email: user.email,
+        storeName: user.vendorStore?.name || storeName || `${firstName} ${lastName}`,
+        description: user.vendorStore?.description || description || "",
+        commission: user.vendorStore?.commission || 15,
         suspended: false, totalProducts: 0, totalSales: 0, totalEarnings: 0, pendingPayout: 0,
-        joinedAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-      }]);
-      setNewVendorForm({ firstName: "", lastName: "", email: "", password: "" });
+        joinedAt: user.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+      };
+      setVendors((prev) => [...prev, vendor]);
+      setNewVendorForm({ firstName: "", lastName: "", email: "", password: "", storeName: "", description: "" });
       setShowAddVendor(false);
-    } catch {
-      alert("Failed to connect to server");
+      alert("Vendor created successfully!");
+    } catch (err) {
+      console.error("Failed to create vendor:", err);
+      alert(err.message || "Failed to create vendor");
+    }
+  };
+
+  const handleDeleteVendor = async (vendorId) => {
+    if (!window.confirm("Are you sure you want to delete this vendor? This action cannot be undone.")) return;
+    try {
+      await authApi.admin.deleteUser(vendorId);
+      setVendors((prev) => prev.filter((v) => v.id !== vendorId));
+      setSelectedVendor(null);
+    } catch (err) {
+      alert(err.message || "Failed to delete vendor");
     }
   };
 
@@ -744,24 +779,25 @@ export default function AdminDashboard({ isVendor }) {
 
     try {
       if (role === "vendor") {
-        const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "vendor" });
+        const data = await authApi.admin.createVendor({ firstName, lastName, email, password });
+        const user = data.user || data;
 
         const newUser = {
-          id: data._id,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
+          id: user._id || user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
           role: "vendor",
           phone: null,
-          createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          createdAt: user.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
           addresses: [],
         };
 
         setVendors((prev) => [...prev, {
           ...newUser,
-          storeName: data.vendorStore?.name || `${firstName} ${lastName}`,
-          description: data.vendorStore?.description || "",
-          commission: data.vendorStore?.commission || 15,
+          storeName: user.vendorStore?.name || `${firstName} ${lastName}`,
+          description: user.vendorStore?.description || "",
+          commission: user.vendorStore?.commission || 15,
           suspended: false,
           totalProducts: 0,
           totalSales: 0,
@@ -773,23 +809,24 @@ export default function AdminDashboard({ isVendor }) {
         setUsers((prev) => [...prev, newUser]);
       } else {
         const data = await authApi.admin.createUser({ firstName, lastName, email, password, role: "customer" });
+        const user = data.user || data;
         const newUser = {
-          id: data._id,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          role: data.role,
-          phone: data.phone || null,
-          createdAt: data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-          addresses: data.addresses || [],
+          id: user._id || user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          phone: user.phone || null,
+          createdAt: user.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          addresses: user.addresses || [],
         };
         setUsers((prev) => [...prev, newUser]);
       }
 
       setNewUserForm({ firstName: "", lastName: "", email: "", password: "", role: "vendor" });
       setShowAddUser(false);
-    } catch {
-      alert("Failed to connect to server");
+    } catch (err) {
+      alert(err.message || "Failed to create user");
     }
   };
 
@@ -813,14 +850,43 @@ export default function AdminDashboard({ isVendor }) {
     } catch { alert("Could not update this advertisement."); }
   };
 
+  const emptyAdForm = { title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" };
+
+  const closeAdForm = () => {
+    setShowNewAdForm(false);
+    setEditingAdId(null);
+    setNewAdForm(emptyAdForm);
+  };
+
+  const startEditAd = (ad) => {
+    setEditingAdId(ad.id);
+    setNewAdForm({
+      title: ad.title || "",
+      subtitle: ad.subtitle || "",
+      type: ad.type || "slide",
+      position: ad.position || "homepage-top",
+      image: ad.image || "",
+      link: ad.link || "",
+      buttonText: ad.buttonText || "Shop Now",
+      startDate: ad.startDate || "",
+      endDate: ad.endDate || "",
+    });
+    setShowNewAdForm(true);
+    setTimeout(() => adFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+  };
+
   const addNewAd = async () => {
     if (!newAdForm.title.trim() || !newAdForm.image) return;
     try {
-      const saved = await adsApi.create(newAdForm);
-      setAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
-      setNewAdForm({ title: "", subtitle: "", type: "slide", position: "homepage-top", image: "", link: "/collection", buttonText: "Shop Now", startDate: "", endDate: "" });
-      setShowNewAdForm(false);
-    } catch (error) { alert(error.message || "Could not create advertisement."); }
+      if (editingAdId) {
+        const saved = await adsApi.update(editingAdId, newAdForm);
+        setAds((prev) => prev.map((item) => (item.id === editingAdId ? { ...saved, id: saved._id } : item)));
+      } else {
+        const saved = await adsApi.create(newAdForm);
+        setAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
+      }
+      closeAdForm();
+    } catch (error) { alert(error.message || "Could not save advertisement."); }
   };
 
   const handleAdImage = (file) => {
@@ -846,6 +912,7 @@ export default function AdminDashboard({ isVendor }) {
   const startEditProduct = (p) => {
     setEditingProduct(p);
     setShowAddForm(true);
+    setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
   };
 
   const startEditRental = (r) => {
@@ -885,6 +952,7 @@ export default function AdminDashboard({ isVendor }) {
         sizes: payload.sizes,
         img: payload.img,
         images: payload.images,
+        colorImages: payload.colorImages,
         inventory,
         rentalAvailable: payload.rentalAvailable,
         rentalPricePerDay: payload.rentalPricePerDay,
@@ -1420,22 +1488,30 @@ export default function AdminDashboard({ isVendor }) {
             >
               <div className="p-6 space-y-4">
                 <p className="eyebrow">Add New Vendor</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">First Name</label>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">First Name *</label>
                     <input type="text" value={newVendorForm.firstName} onChange={(e) => setNewVendorForm((p) => ({ ...p, firstName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
                   </div>
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Last Name</label>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Last Name *</label>
                     <input type="text" value={newVendorForm.lastName} onChange={(e) => setNewVendorForm((p) => ({ ...p, lastName: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
                   </div>
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Email</label>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Email *</label>
                     <input type="email" value={newVendorForm.email} onChange={(e) => setNewVendorForm((p) => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
                   </div>
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Password</label>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Password *</label>
                     <input type="password" value={newVendorForm.password} onChange={(e) => setNewVendorForm((p) => ({ ...p, password: e.target.value }))} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Store Name</label>
+                    <input type="text" value={newVendorForm.storeName} onChange={(e) => setNewVendorForm((p) => ({ ...p, storeName: e.target.value }))} placeholder={`${newVendorForm.firstName} ${newVendorForm.lastName}`.trim() || "Store name"} className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1.5">Store Description</label>
+                    <input type="text" value={newVendorForm.description} onChange={(e) => setNewVendorForm((p) => ({ ...p, description: e.target.value }))} placeholder="Brief store description" className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30" />
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -1508,10 +1584,11 @@ export default function AdminDashboard({ isVendor }) {
                     <Edit2 size={14} /> Edit
                   </button>
                   <button
-                    onClick={() => banVendor(vendor.id)}
+                    onClick={() => handleDeleteVendor(vendor.id)}
                     className="flex items-center justify-center gap-2 px-3 py-2.5 border border-crimson/30 text-crimson text-xs uppercase tracking-wider hover:bg-crimson/5 transition-colors"
+                    title="Delete Vendor"
                   >
-                    <Ban size={14} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </motion.div>
@@ -1651,8 +1728,8 @@ export default function AdminDashboard({ isVendor }) {
                             <button onClick={() => startEditVendor(selectedVendor)} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
                               <Edit2 size={14} /> Edit Vendor
                             </button>
-                            <button onClick={() => banVendor(selectedVendor.id)} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-crimson/30 text-crimson text-xs uppercase tracking-widest hover:bg-crimson/5 transition-colors">
-                              <Ban size={14} /> Ban Vendor
+                            <button onClick={() => handleDeleteVendor(selectedVendor.id)} className="flex items-center justify-center gap-2 px-4 py-2.5 border border-crimson/30 text-crimson text-xs uppercase tracking-widest hover:bg-crimson/5 transition-colors">
+                              <Trash2 size={14} /> Delete
                             </button>
                           </div>
                           {resetPasswordVendor === selectedVendor.id ? (
@@ -1751,7 +1828,11 @@ export default function AdminDashboard({ isVendor }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{filteredAllProducts.length} product{filteredAllProducts.length !== 1 ? "s" : ""} found</p>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => {
+            const opening = !showAddForm;
+            setShowAddForm(opening);
+            if (opening) setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+          }}
           className="btn-ink px-5 py-2.5 text-xs tracking-widest uppercase flex items-center gap-2"
         >
           <Plus size={14} />
@@ -1759,17 +1840,19 @@ export default function AdminDashboard({ isVendor }) {
         </button>
       </div>
 
-      <AnimatePresence>
-        {showAddForm && (
-          <AddProductForm
-            categories={MOCK_CATEGORIES.filter((c) => c.active)}
-            vendors={vendors}
-            editProduct={editingProduct}
-            onSave={handleSaveProduct}
-            onCancel={() => { setShowAddForm(false); setEditingProduct(null); }}
-          />
-        )}
-      </AnimatePresence>
+      <div ref={addFormRef}>
+        <AnimatePresence>
+          {showAddForm && (
+            <AddProductForm
+              categories={MOCK_CATEGORIES.filter((c) => c.active)}
+              vendors={vendors}
+              editProduct={editingProduct}
+              onSave={handleSaveProduct}
+              onCancel={() => { setShowAddForm(false); setEditingProduct(null); }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -2336,7 +2419,7 @@ export default function AdminDashboard({ isVendor }) {
       <div className="flex items-center justify-between">
         <p className="eyebrow">Active Campaigns</p>
         <button
-          onClick={() => setShowNewAdForm(!showNewAdForm)}
+          onClick={() => (showNewAdForm ? closeAdForm() : setShowNewAdForm(true))}
           className="flex items-center gap-2 px-4 py-2.5 bg-ink text-cream text-xs uppercase tracking-widest hover:bg-crimson transition-colors"
         >
           <Plus size={14} /> New Ad
@@ -2346,12 +2429,23 @@ export default function AdminDashboard({ isVendor }) {
       <AnimatePresence>
         {showNewAdForm && (
           <motion.div
+            ref={adFormRef}
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
             <div className="bg-cream border border-border p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="eyebrow">{editingAdId ? "— Edit Advertisement" : "— New Advertisement"}</p>
+                <button
+                  onClick={closeAdForm}
+                  className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Title</label>
@@ -2429,10 +2523,10 @@ export default function AdminDashboard({ isVendor }) {
                   disabled={!newAdForm.title.trim() || !newAdForm.image}
                   className="btn-ink btn-ink-hover px-6 py-2.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Send size={14} /> Create Ad
+                  <Send size={14} /> {editingAdId ? "Save Changes" : "Create Ad"}
                 </button>
                 <button
-                  onClick={() => setShowNewAdForm(false)}
+                  onClick={closeAdForm}
                   className="px-6 py-2.5 border border-border text-xs uppercase tracking-widest text-muted-foreground hover:bg-secondary transition-colors"
                 >
                   Cancel
@@ -2486,6 +2580,13 @@ export default function AdminDashboard({ isVendor }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => startEditAd(ad)}
+                      className="p-2 hover:bg-ink/10 text-ink transition-colors"
+                      title="Edit ad"
+                    >
+                      <Edit2 size={16} />
+                    </button>
                     <button
                       onClick={() => toggleAd(ad.id)}
                       className={`p-2 transition-colors ${ad.active ? "bg-ink/10 text-ink" : "bg-secondary text-muted-foreground"}`}
@@ -2677,7 +2778,7 @@ export default function AdminDashboard({ isVendor }) {
       if (o.rentalDetails) return false;
       const matchesSearch =
         (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
-        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
+        (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
       const matchesStatus = orderStatusFilter === "All" || o.status === orderStatusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -2757,7 +2858,7 @@ export default function AdminDashboard({ isVendor }) {
                       onClick={() => setExpandedAdminOrder(isExpanded ? null : order.id)}
                     >
                       <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
-                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {new Date(order.date || order.createdAt).toLocaleDateString()}
@@ -2788,12 +2889,18 @@ export default function AdminDashboard({ isVendor }) {
                             <OrderDetailPanel order={order} showCustomer={true} />
                             <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
                               {order.status === "return_requested" && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
-                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
-                                >
-                                  Confirm Return & Restore Inventory
-                                </button>
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Review Photos & Confirm Return
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
                               )}
                               {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
                                 <button
@@ -2838,7 +2945,7 @@ export default function AdminDashboard({ isVendor }) {
     const filteredRentalOrders = rentalOrders.filter((o) => {
       const matchesSearch =
         (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
-        (o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
+        (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
       const matchesStatus = adminRentalOrderStatusFilter === "All" || 
         o.status === adminRentalOrderStatusFilter ||
         o.rentalStatus === adminRentalOrderStatusFilter;
@@ -2924,7 +3031,7 @@ export default function AdminDashboard({ isVendor }) {
                       onClick={() => setExpandedAdminRentalOrder(isExpanded ? null : order.id)}
                     >
                       <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
-                      <div className="md:col-span-2 text-sm text-foreground">{order.shipping?.firstName} {order.shipping?.lastName}</div>
+                      <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
@@ -3067,12 +3174,18 @@ export default function AdminDashboard({ isVendor }) {
                                 </>
                               )}
                               {order.status === "return_requested" && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
-                                  className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
-                                >
-                                  Confirm Return & Restore Inventory
-                                </button>
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Review Photos & Confirm Return
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
                               )}
                               {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
                                 const currentRentalStepId = order.rentalStatus || order.status;
@@ -3123,6 +3236,220 @@ export default function AdminDashboard({ isVendor }) {
     );
   };
 
+  const renderReviews = () => {
+    const allReviews = reviews || [];
+    const avgRating = allReviews.length > 0
+      ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+      : 0;
+    const ratingCounts = [5, 4, 3, 2, 1].map((r) => ({
+      rating: r,
+      count: allReviews.filter((review) => review.rating === r).length,
+    }));
+    const maxCount = Math.max(...ratingCounts.map((r) => r.count), 1);
+
+    return (
+      <div className="space-y-8">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={Star} label="Total Reviews" value={allReviews.length} index={0} />
+          <StatCard icon={Star} label="Avg Rating" value={avgRating.toFixed(1)} index={1} />
+          <StatCard icon={Star} label="5-Star Reviews" value={allReviews.filter((r) => r.rating === 5).length} index={2} />
+          <StatCard icon={Star} label="Pending Reply" value={allReviews.filter((r) => !r.vendorReply).length} index={3} />
+        </div>
+
+        <div className="bg-cream border border-border p-6">
+          <h3 className="font-serif text-lg text-foreground mb-4">Rating Distribution</h3>
+          <div className="space-y-3">
+            {ratingCounts.map(({ rating, count }) => (
+              <div key={rating} className="flex items-center gap-3">
+                <span className="text-sm text-foreground w-8">{rating} ★</span>
+                <div className="flex-1 h-3 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 rounded-full transition-all"
+                    style={{ width: `${(count / maxCount) * 100}%` }}
+                  />
+                </div>
+                <span className="text-sm text-muted-foreground w-8 text-right">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-cream border border-border overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-2">Product</div>
+            <div className="col-span-1">Rating</div>
+            <div className="col-span-4">Review</div>
+            <div className="col-span-1">Date</div>
+            <div className="col-span-2">Reply</div>
+          </div>
+          <div className="divide-y divide-border">
+            {allReviews.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <Star size={40} className="mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No reviews yet</p>
+              </div>
+            ) : (
+              allReviews.map((review) => (
+                <div key={review.id} className="px-6 py-4 hover:bg-secondary/50 transition-colors">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-foreground">{review.userName}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground truncate">{review.productId}</p>
+                    </div>
+                    <div className="md:col-span-1">
+                      <span className="text-amber-500 text-sm">{review.rating} ★</span>
+                    </div>
+                    <div className="md:col-span-4">
+                      <p className="text-sm text-foreground">{review.comment}</p>
+                    </div>
+                    <div className="md:col-span-1">
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(review.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="md:col-span-2">
+                      {review.vendorReply ? (
+                        <p className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{review.vendorReply}</p>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No reply</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAnalytics = () => {
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const deliveredOrders = orders.filter((o) => o.status === "delivered").length;
+    const cancelledOrders = orders.filter((o) => o.status === "cancelled").length;
+    const returnRequests = orders.filter((o) => o.status === "return_requested").length;
+    const rentalOrders = orders.filter((o) => o.rentalDetails).length;
+    const normalOrders = orders.filter((o) => !o.rentalDetails).length;
+
+    const categoryStats = {};
+    products.forEach((p) => {
+      const cat = p.category || "Uncategorized";
+      if (!categoryStats[cat]) categoryStats[cat] = { count: 0, revenue: 0 };
+      categoryStats[cat].count += 1;
+      const productOrders = orders.filter((o) =>
+        o.items?.some((item) => item.productId === p.id || item.productId === p.slug)
+      );
+      categoryStats[cat].revenue += productOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    });
+
+    const topProducts = products
+      .map((p) => {
+        const productOrders = orders.filter((o) =>
+          o.items?.some((item) => item.productId === p.id || item.productId === p.slug)
+        );
+        return {
+          name: p.name,
+          orders: productOrders.length,
+          revenue: productOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+        };
+      })
+      .sort((a, b) => b.orders - a.orders)
+      .slice(0, 5);
+
+    return (
+      <div className="space-y-8">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={DollarSign} label="Total Revenue" value={`$${totalRevenue.toLocaleString()}`} index={0} />
+          <StatCard icon={ShoppingCart} label="Total Orders" value={totalOrders} index={1} />
+          <StatCard icon={TrendingUp} label="Avg Order Value" value={`$${avgOrderValue.toFixed(0)}`} index={2} />
+          <StatCard icon={Package} label="Products" value={products.length} index={3} />
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={CheckCircle} label="Delivered" value={deliveredOrders} index={4} />
+          <StatCard icon={Ban} label="Cancelled" value={cancelledOrders} index={5} />
+          <StatCard icon={Repeat} label="Rental Orders" value={rentalOrders} index={6} />
+          <StatCard icon={AlertTriangle} label="Return Requests" value={returnRequests} index={7} />
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div className="bg-cream border border-border p-6">
+            <h3 className="font-serif text-lg text-foreground mb-4">Revenue by Category</h3>
+            <div className="space-y-3">
+              {Object.entries(categoryStats)
+                .sort((a, b) => b[1].revenue - a[1].revenue)
+                .slice(0, 6)
+                .map(([category, stats]) => (
+                  <div key={category} className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-foreground">{category}</span>
+                        <span className="text-sm text-muted-foreground">{stats.count} products</span>
+                      </div>
+                      <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-ink h-full rounded-full"
+                          style={{
+                            width: `${Math.max(5, (stats.revenue / (totalRevenue || 1)) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-sm font-medium text-foreground ml-4 w-20 text-right">
+                      ${stats.revenue.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="bg-cream border border-border p-6">
+            <h3 className="font-serif text-lg text-foreground mb-4">Top Products by Orders</h3>
+            <div className="space-y-3">
+              {topProducts.map((product, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground w-6">{i + 1}.</span>
+                  <div className="flex-1">
+                    <p className="text-sm text-foreground truncate">{product.name}</p>
+                    <p className="text-xs text-muted-foreground">{product.orders} orders</p>
+                  </div>
+                  <span className="text-sm font-medium text-foreground">
+                    ${product.revenue.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-cream border border-border p-6">
+          <h3 className="font-serif text-lg text-foreground mb-4">Monthly Performance</h3>
+          <div className="flex items-end gap-3 h-48">
+            {MONTHLY_DATA.map((d, i) => (
+              <div key={d.month} className="flex-1 flex flex-col items-center gap-2">
+                <span className="text-xs text-muted-foreground font-mono">${(d.revenue / 1000).toFixed(1)}k</span>
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: `${(d.revenue / maxRevenue) * 100}%` }}
+                  transition={{ delay: i * 0.08, duration: 0.6, ease: "easeOut" }}
+                  className="w-full bg-ink/80 hover:bg-crimson transition-colors cursor-pointer min-h-[4px]"
+                  title={`$${d.revenue.toLocaleString()}`}
+                />
+                <span className="text-xs text-muted-foreground">{d.month}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard": return renderDashboard();
@@ -3132,6 +3459,8 @@ export default function AdminDashboard({ isVendor }) {
       case "vendors": return renderVendors();
       case "products": return renderProducts();
       case "rentals": return renderRentals();
+      case "reviews": return renderReviews();
+      case "analytics": return renderAnalytics();
       case "categories": return renderCategories();
       case "featured": return renderFeatured();
       case "ads": return renderAds();
