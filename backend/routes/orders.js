@@ -7,6 +7,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
 import { authMiddleware, adminOnly, vendorOnly } from '../middleware/auth.js';
+import { sendOrderConfirmationEmail } from '../mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +55,24 @@ async function storeReturnPhotos(order, photos) {
 }
 
 const router = Router();
+
+// Booking confirmation OTPs: orderId -> { otp, expiresAt, phone }
+const confirmOtps = new Map();
+const OTP_TTL_MS = 5 * 60 * 1000;
+
+async function loadOwnedOrder(req, res) {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    res.status(404).json({ error: 'Order not found' });
+    return null;
+  }
+  if (order.userId !== req.user.id && req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Not your order' });
+    return null;
+  }
+  return order;
+}
+
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
@@ -142,8 +161,9 @@ router.post('/', authMiddleware, async (req, res) => {
       shipping: shipping || {},
       payment: payment || {},
       status: 'confirmed',
-      rentalStatus: rentalDetails ? 'active' : 'active',
+      rentalStatus: rentalDetails ? 'confirmed' : 'active',
       rentalDetails: rentalDetails || null,
+      returnDueDate: rentalDetails?.endDate || null,
       estimatedDelivery,
       timeline: [{ status: 'confirmed', date: now, description: 'Order placed successfully' }],
     });
@@ -155,7 +175,66 @@ router.post('/', authMiddleware, async (req, res) => {
       );
     }
 
+    // Order confirmation email — never blocks or fails the order.
+    sendOrderConfirmationEmail(order.toObject()).catch((err) => {
+      console.error('[mail] order confirmation failed:', err.message);
+    });
+
     res.status(201).json(order.toObject());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/confirm-otp/request', authMiddleware, async (req, res) => {
+  try {
+    const order = await loadOwnedOrder(req, res);
+    if (!order) return;
+
+    const phone = String(order.shipping?.phone || '').trim();
+    if (phone.replace(/\D/g, '').length < 7) {
+      return res.status(400).json({ error: 'No phone number on this order' });
+    }
+    if (order.phoneVerified) return res.json({ message: 'Phone already verified', phoneVerified: true });
+
+    const otp = process.env.NODE_ENV === 'production'
+      ? String(Math.floor(100000 + Math.random() * 900000))
+      : '123456';
+    confirmOtps.set(order._id, { otp, expiresAt: Date.now() + OTP_TTL_MS, phone });
+    // Connect an SMS provider here in production. OTP values are only returned in development.
+    console.log(`[otp] Order ${order._id} confirmation code for ${phone}: ${otp}`);
+
+    res.json({
+      message: 'OTP sent',
+      phone,
+      ...(process.env.NODE_ENV !== 'production' ? { developmentOtp: otp } : {}),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/confirm-otp/verify', authMiddleware, async (req, res) => {
+  try {
+    const order = await loadOwnedOrder(req, res);
+    if (!order) return;
+
+    const record = confirmOtps.get(order._id);
+    const otp = String(req.body.otp || '').trim();
+    if (!record || record.expiresAt < Date.now() || record.otp !== otp) {
+      return res.status(401).json({ error: 'Invalid or expired OTP' });
+    }
+    confirmOtps.delete(order._id);
+
+    order.phoneVerified = true;
+    order.timeline.push({
+      status: 'confirmed',
+      date: new Date().toISOString(),
+      description: `Phone number ${record.phone} verified`,
+    });
+    await order.save();
+
+    res.json({ message: 'Phone verified', phoneVerified: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -230,7 +309,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 
     const { status, rentalStatus } = req.body;
     const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'];
-    const validRentalStatuses = ['active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
+    const validRentalStatuses = ['confirmed', 'preparing', 'shipped', 'delivered', 'active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
 
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -248,6 +327,21 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     if (rentalStatus) {
       order.rentalStatus = rentalStatus;
       order.timeline.push({ status: rentalStatus, date: new Date().toISOString(), description: `Rental status: ${rentalStatus}` });
+
+      // Keep the delivery status in sync while a rental walks the shipping steps.
+      const rentalToOrderStatus = {
+        confirmed: 'confirmed',
+        preparing: 'preparing',
+        shipped: 'shipped',
+        delivered: 'delivered',
+        active: 'delivered',
+        pending_return: 'delivered',
+        completed: 'returned',
+      };
+      const mirrored = rentalToOrderStatus[rentalStatus];
+      if (!status && mirrored && !['cancelled', 'returned', 'return_requested'].includes(order.status)) {
+        order.status = mirrored;
+      }
     }
 
     await order.save();
@@ -299,7 +393,8 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: 'Order already returned or return requested' });
       }
 
-      if (order.status !== 'delivered') {
+      const rentalReadyForReturn = !!order.rentalDetails && ['delivered', 'active'].includes(order.rentalStatus);
+      if (order.status !== 'delivered' && !rentalReadyForReturn) {
         return res.status(400).json({ error: 'Only delivered orders can be returned' });
       }
 
@@ -390,7 +485,8 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized' });
       }
 
-      if (order.status !== 'return_requested') {
+      const rentalAwaitingReceipt = !!order.rentalDetails && order.returnRequested && order.status === 'delivered';
+      if (order.status !== 'return_requested' && !rentalAwaitingReceipt) {
         return res.status(400).json({ error: 'Order is not pending return confirmation' });
       }
 
@@ -407,7 +503,12 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
 
       order.status = 'returned';
       order.returnPhotosReviewed = true;
-      order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return photos reviewed and confirmed, inventory restored' });
+      if (order.rentalDetails) {
+        if (order.rentalStatus === 'pending_return') order.rentalStatus = 'awaiting_inspection';
+        order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return received, inventory restored — awaiting inspection' });
+      } else {
+        order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return photos reviewed and confirmed, inventory restored' });
+      }
       await order.save();
 
       res.json(order.toObject());
@@ -427,7 +528,7 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized' });
       }
 
-      if (!order.rentalDetails || order.rentalStatus !== 'pending_return') {
+      if (!order.rentalDetails || !['pending_return', 'awaiting_inspection'].includes(order.rentalStatus)) {
         return res.status(400).json({ error: 'Order is not awaiting inspection' });
       }
 
@@ -461,6 +562,46 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
       order.timeline.push({ status: 'inspected', date: new Date().toISOString(), description: `Inspection: ${inspectionStatus}` });
       await order.save();
 
+      res.json(order.toObject());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/:id/refund-deposit', authMiddleware, async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      if (!order.rentalDetails) {
+        return res.status(400).json({ error: 'Only rental orders have a deposit' });
+      }
+
+      if (order.depositRefunded) {
+        return res.status(400).json({ error: 'Deposit has already been refunded' });
+      }
+
+      const amount = Number(req.body?.amount);
+      const refundAmount = Number.isFinite(amount) && amount > 0
+        ? Math.min(amount, order.deposit || 0)
+        : order.deposit || 0;
+
+      order.depositRefunded = true;
+      order.refundAmount = refundAmount;
+      order.rentalStatus = 'deposit_refunded';
+      order.timeline.push({
+        status: 'deposit_refunded',
+        date: new Date().toISOString(),
+        description: `Deposit of €${refundAmount} refunded`,
+      });
+
+      await order.save();
       res.json(order.toObject());
     } catch (err) {
       res.status(500).json({ error: err.message });

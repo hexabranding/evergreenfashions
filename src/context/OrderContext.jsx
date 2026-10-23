@@ -16,6 +16,20 @@ function loadState(key, fallback) {
   }
 }
 
+function mapApiOrder(order) {
+  return {
+    ...order,
+    id: order._id || order.id,
+    date: order.createdAt || order.date,
+    items: (order.items || []).map((item) => ({
+      ...item,
+      qty: item.quantity,
+      selectedSize: item.size,
+      selectedColor: item.color,
+    })),
+  };
+}
+
 function buildInventoryFromProducts(products) {
   const inventory = {};
   if (!products || !Array.isArray(products)) return inventory;
@@ -286,8 +300,9 @@ const placeOrder = useCallback(
         shipping: shippingInfo,
         payment: { ...paymentMethod, method: paymentMethod?.method || "card" },
         status: "confirmed",
-        rentalStatus: hasRental ? "active" : "active",
+        rentalStatus: hasRental ? "confirmed" : "active",
         rentalDetails,
+        returnDueDate: rentalDetails?.endDate || null,
         date: now.toISOString(),
         estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         userId,
@@ -463,7 +478,14 @@ const placeOrder = useCallback(
     return { saved, offline };
   }, []);
 
-  const inspectOrder = useCallback((orderId, inspectionStatus, notes) => {
+  const inspectOrder = useCallback(async (orderId, inspectionStatus, notes) => {
+    try {
+      const updated = await ordersApi.inspectOrder(orderId, inspectionStatus, notes);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? mapApiOrder(updated) : o)));
+      return;
+    } catch {
+      // Server unreachable or rejected — mirror the inspection locally.
+    }
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id !== orderId) return o;
@@ -528,9 +550,17 @@ const placeOrder = useCallback(
         return {
           ...o,
           status: "returned",
+          rentalStatus:
+            o.rentalDetails && o.rentalStatus === "pending_return" ? "awaiting_inspection" : o.rentalStatus,
           timeline: [
             ...o.timeline,
-            { status: "returned", date: new Date().toISOString(), description: "Return confirmed, inventory restored" },
+            {
+              status: "returned",
+              date: new Date().toISOString(),
+              description: o.rentalDetails
+                ? "Return received, inventory restored — awaiting inspection"
+                : "Return confirmed, inventory restored",
+            },
           ],
         };
       })
@@ -551,12 +581,24 @@ const placeOrder = useCallback(
   ];
 
   const updateRentalStatus = useCallback((orderId, newRentalStatus) => {
+    const rentalToOrderStatus = {
+      confirmed: "confirmed",
+      preparing: "preparing",
+      shipped: "shipped",
+      delivered: "delivered",
+      active: "delivered",
+      pending_return: "delivered",
+      completed: "returned",
+    };
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id !== orderId) return o;
+        const mirrored = rentalToOrderStatus[newRentalStatus];
+        const canMirror = mirrored && !["cancelled", "returned", "return_requested"].includes(o.status);
         return {
           ...o,
           rentalStatus: newRentalStatus,
+          status: canMirror ? mirrored : o.status,
           timeline: [
             ...o.timeline,
             { status: newRentalStatus, date: new Date().toISOString(), description: `Rental stage: ${newRentalStatus}` },

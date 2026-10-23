@@ -35,6 +35,7 @@ export default function Checkout() {
     firstName: "",
     lastName: "",
     email: "",
+    phone: "",
     address: "",
     city: "",
     zip: "",
@@ -49,7 +50,7 @@ export default function Checkout() {
     upiId: "",
   });
 
-  useEffect(() => { if (currentUser) setShipping((previous) => ({ ...previous, firstName: previous.firstName || currentUser.firstName || "", lastName: previous.lastName || currentUser.lastName || "", email: previous.email || currentUser.email || "" })); }, [currentUser]);
+  useEffect(() => { if (currentUser) setShipping((previous) => ({ ...previous, firstName: previous.firstName || currentUser.firstName || "", lastName: previous.lastName || currentUser.lastName || "", email: previous.email || currentUser.email || "", phone: previous.phone || currentUser.phone || "" })); }, [currentUser]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -215,6 +216,7 @@ export default function Checkout() {
     if (!shipping.firstName.trim()) e.firstName = "Required";
     if (!shipping.lastName.trim()) e.lastName = "Required";
     if (!shipping.email.trim() || !shipping.email.includes("@")) e.email = "Valid email required";
+    if (!shipping.phone.trim() || shipping.phone.replace(/\D/g, "").length < 7) e.phone = "Valid phone number required";
     if (!shipping.address.trim()) e.address = "Required";
     if (!shipping.city.trim()) e.city = "Required";
     if (!shipping.zip.trim()) e.zip = "Required";
@@ -251,9 +253,17 @@ export default function Checkout() {
     }
   };
 
-  const handlePlaceOrder = () => {
-    placeOrder(shipping, payment);
-    navigate("/confirmation");
+  const [placing, setPlacing] = useState(false);
+
+  const handlePlaceOrder = async () => {
+    if (placing) return;
+    setPlacing(true);
+    try {
+      await placeOrder(shipping, payment);
+      navigate("/confirmation");
+    } finally {
+      setPlacing(false);
+    }
   };
 
   const inputClass = (field) =>
@@ -341,6 +351,11 @@ setErrors({});
                     <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 block">Email <span className="text-crimson">*</span></label>
                     <input type="email" value={shipping.email} onChange={(e) => setShipping({ ...shipping, email: e.target.value })} className={inputClass("email")} />
                     {errors.email && <p className="text-[10px] text-crimson mt-1">{errors.email}</p>}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 block">Phone Number <span className="text-crimson">*</span></label>
+                    <input type="tel" inputMode="tel" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} placeholder="+91 98765 43210" className={inputClass("phone")} />
+                    {errors.phone && <p className="text-[10px] text-crimson mt-1">{errors.phone}</p>}
                   </div>
                   <div className="sm:col-span-2">
                     <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 block">Address <span className="text-crimson">*</span></label>
@@ -510,7 +525,8 @@ setErrors({});
                     {shipping.firstName} {shipping.lastName}<br />
                     {shipping.address}<br />
                     {shipping.city}, {shipping.zip}<br />
-                    {shipping.email}
+                    {shipping.email}<br />
+                    {shipping.phone}
                   </p>
                 </div>
 
@@ -556,8 +572,8 @@ setErrors({});
                   </div>
                 </div>
 
-                <button onClick={handlePlaceOrder} className="w-full bg-crimson text-cream py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-crimson/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  Place Order — {formatPrice(grandTotal)}
+                <button onClick={handlePlaceOrder} disabled={placing} className="w-full bg-crimson text-cream py-4 text-[11px] tracking-[0.25em] uppercase hover:bg-crimson/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {placing ? "Placing Order…" : `Place Order — ${formatPrice(grandTotal)}`}
                 </button>
               </motion.div>
             )}

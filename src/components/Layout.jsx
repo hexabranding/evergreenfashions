@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ShoppingBag, Search, Heart, X, Truck, ShieldCheck, RotateCcw, CreditCard,
-  User, LogOut, ChevronDown, ArrowUp, Check,
+  User, LogOut, ChevronDown, ArrowUp, Check, MapPin, ArrowUpRight, Send,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useCart } from "@/context/CartContext";
@@ -48,6 +48,26 @@ const footerCities = [
   { city: "Tokyo", address: "Minami-Aoyama 3-9" },
   { city: "New York", address: "SoHo, Greene Street" },
 ];
+
+const footerLegal = ["Privacy Policy", "Terms of Service", "Cookie Settings"];
+
+function FooterHeading({ children }) {
+  return (
+    <div className="mb-6">
+      <span className="block w-6 h-px bg-crimson mb-4" />
+      <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40">{children}</p>
+    </div>
+  );
+}
+
+function FooterLink({ children }) {
+  return (
+    <button className="group inline-flex items-center gap-2 text-sm text-cream/70 hover:text-cream transition-colors">
+      <span className="w-0 group-hover:w-4 h-px bg-crimson transition-all duration-300" />
+      <span className="transition-transform duration-300 group-hover:translate-x-1">{children}</span>
+    </button>
+  );
+}
 
 export default function Layout() {
   const { products } = useProducts();
@@ -270,20 +290,33 @@ export default function Layout() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-ink text-cream">
+      <footer className="relative bg-ink text-cream overflow-hidden">
         {/* Newsletter */}
-        <div className="border-b border-cream/10">
-          <div className="max-w-[1600px] mx-auto px-8 py-14 grid lg:grid-cols-2 gap-10 items-center">
+        <div className="border-b border-cream/10 relative">
+          <div className="max-w-[1600px] mx-auto px-6 lg:px-10 py-16 grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
-              <p className="text-[10px] tracking-[0.35em] uppercase text-crimson mb-4">The Evergreen Letters</p>
-              <h2 className="font-serif text-3xl md:text-4xl leading-tight text-cream">
+              <p className="flex items-center gap-3 text-[10px] tracking-[0.35em] uppercase text-crimson mb-5">
+                <span className="w-8 h-px bg-crimson" />
+                The Evergreen Letters
+              </p>
+              <h2 className="font-serif text-3xl md:text-[2.6rem] leading-[1.08] text-cream">
                 Private previews, early access<br className="hidden md:block" /> to every new collection.
               </h2>
+              <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40 mt-5">
+                One letter a month · No spam · Unsubscribe anytime
+              </p>
             </div>
             {newsletterSubscribed ? (
-              <div className="flex items-center gap-3 border border-cream/25 px-6 py-4">
-                <Check size={16} className="text-crimson" />
-                <p className="text-sm text-cream/80">Welcome to the atelier. Your first letter arrives soon.</p>
+              <div className="flex items-center gap-4 border border-crimson/50 bg-crimson/10 px-6 py-5">
+                <span className="w-8 h-8 shrink-0 grid place-items-center border border-crimson text-crimson rounded-full">
+                  <Check size={14} />
+                </span>
+                <div>
+                  <p className="text-sm text-cream">Welcome to the atelier.</p>
+                  <p className="text-[11px] text-cream/50 mt-0.5">
+                    Your first letter arrives soon — check your inbox.
+                  </p>
+                </div>
               </div>
             ) : (
               <form
@@ -299,13 +332,14 @@ export default function Layout() {
                   value={newsletterEmail}
                   onChange={(e) => setNewsletterEmail(e.target.value)}
                   placeholder="Your email address"
-                  className="flex-1 bg-transparent border border-cream/25 px-5 py-4 text-sm text-cream placeholder:text-cream/40 focus:outline-none focus:border-cream/60 transition-colors"
+                  className="flex-1 bg-transparent border border-cream/25 px-5 py-4 text-sm text-cream placeholder:text-cream/40 focus:outline-none focus:border-crimson transition-colors"
                 />
                 <button
                   type="submit"
-                  className="bg-cream text-ink px-8 py-4 text-[11px] tracking-[0.25em] uppercase font-medium hover:bg-crimson hover:text-cream transition-colors"
+                  className="group inline-flex items-center justify-center gap-2.5 bg-cream text-ink px-8 py-4 text-[11px] tracking-[0.25em] uppercase font-medium hover:bg-crimson hover:text-cream transition-colors"
                 >
                   Subscribe
+                  <Send size={14} className="transition-transform group-hover:translate-x-0.5" />
                 </button>
               </form>
             )}
@@ -313,86 +347,132 @@ export default function Layout() {
         </div>
 
         {/* Link columns */}
-        <div className="max-w-[1600px] mx-auto px-8 py-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-10">
-            <div className="col-span-2 lg:col-span-4">
-              <div className="text-xl tracking-[0.35em] font-serif mb-5">EVERGREEN FASHION</div>
-              <p className="text-xs text-cream/50 leading-relaxed max-w-xs">
-                Couture handcrafted in Paris since 1957. Unisex fashion that moves with you. A quiet revolt against the disposable.
-              </p>
-              <div className="flex flex-wrap gap-x-6 gap-y-2 mt-7">
-                {footerSocials.map((s) => (
-                  <button
-                    key={s}
-                    className="text-[10px] tracking-[0.25em] uppercase text-cream/50 hover:text-crimson transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
+        <div className="relative">
+          <span
+            aria-hidden
+            className="pointer-events-none select-none absolute inset-x-0 -bottom-4 text-center font-serif text-[16vw] leading-none text-cream/5 tracking-[0.05em]"
+          >
+            EVERGREEN
+          </span>
+          <div className="max-w-[1600px] mx-auto px-6 lg:px-10 py-16 relative">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-10">
+              <div className="col-span-2 lg:col-span-4">
+                <Link to="/" className="inline-block text-lg tracking-[0.35em] font-serif mb-5 hover:text-crimson transition-colors">
+                  EVERGREEN FASHION
+                </Link>
+                <p className="text-xs text-cream/50 leading-relaxed max-w-xs">
+                  Couture handcrafted in Paris since 1957. Unisex fashion that moves with you. A quiet revolt against the disposable.
+                </p>
+
+                <div className="mt-8">
+                  <FooterHeading>Follow</FooterHeading>
+                  <div className="flex flex-wrap gap-2">
+                    {footerSocials.map((s) => (
+                      <button
+                        key={s}
+                        className="group inline-flex items-center gap-1.5 border border-cream/20 px-3.5 py-2 text-[10px] tracking-[0.2em] uppercase text-cream/60 hover:border-crimson hover:text-crimson transition-colors"
+                      >
+                        {s}
+                        <ArrowUpRight size={11} className="opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <FooterHeading>We accept</FooterHeading>
+                  <div className="flex flex-wrap gap-1.5">
+                    {paymentMethods.map((m) => (
+                      <span key={m} className="text-[9px] tracking-[0.15em] uppercase border border-cream/20 px-2.5 py-1.5 text-cream/60">
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 mt-7">
-                {paymentMethods.map((m) => (
-                  <span key={m} className="text-[8px] tracking-widest border border-cream/20 px-2 py-1 text-cream/60">
-                    {m}
-                  </span>
-                ))}
+
+              <div className="lg:col-span-2">
+                <FooterHeading>Shop</FooterHeading>
+                <ul className="space-y-3.5">
+                  {footerShop.map((item) => (
+                    <li key={item}>
+                      <FooterLink>{item}</FooterLink>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
-            <div className="lg:col-span-2">
-              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Shop</p>
-              <ul className="space-y-3 text-sm text-cream/70">
-                {footerShop.map((item) => (
-                  <li key={item}>
-                    <button className="hover:text-crimson transition-colors">{item}</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="lg:col-span-2">
-              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Company</p>
-              <ul className="space-y-3 text-sm text-cream/70">
-                {footerCompany.map((item) => (
-                  <li key={item}>
-                    <button className="hover:text-crimson transition-colors">{item}</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="lg:col-span-2">
-              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Help</p>
-              <ul className="space-y-3 text-sm text-cream/70">
-                {footerHelp.map((item) => (
-                  <li key={item}>
-                    <button className="hover:text-crimson transition-colors">{item}</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="lg:col-span-2">
-              <p className="text-[10px] tracking-[0.3em] uppercase text-cream/40 mb-5">Ateliers</p>
-              <ul className="space-y-3 text-sm text-cream/70">
-                {footerCities.map((c) => (
-                  <li key={c.city}>
-                    <p className="font-serif">{c.city}</p>
-                    <p className="text-[10px] text-cream/40 mt-0.5">{c.address}</p>
-                  </li>
-                ))}
-              </ul>
+              <div className="lg:col-span-2">
+                <FooterHeading>Company</FooterHeading>
+                <ul className="space-y-3.5">
+                  {footerCompany.map((item) => (
+                    <li key={item}>
+                      <FooterLink>{item}</FooterLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="lg:col-span-2">
+                <FooterHeading>Help</FooterHeading>
+                <ul className="space-y-3.5">
+                  {footerHelp.map((item) => (
+                    <li key={item}>
+                      <FooterLink>{item}</FooterLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="lg:col-span-2">
+                <FooterHeading>Ateliers</FooterHeading>
+                <ul className="space-y-4">
+                  {footerCities.map((c) => (
+                    <li key={c.city} className="group flex gap-2.5">
+                      <MapPin size={13} className="mt-1 shrink-0 text-crimson" />
+                      <div>
+                        <p className="font-serif text-sm text-cream/90 group-hover:text-crimson transition-colors">{c.city}</p>
+                        <p className="text-[11px] text-cream/40 mt-0.5">{c.address}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div className="border-t border-cream/10">
-          <div className="max-w-[1600px] mx-auto px-8 py-6 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40">© MMXXVI Evergreen Fashion</p>
-            <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40">Paris · Milano · Tokyo · New York</p>
-            <button
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-cream/60 hover:text-crimson transition-colors"
-            >
-              Back to top <ArrowUp size={12} />
-            </button>
+        <div className="border-t border-cream/10 relative">
+          <div className="max-w-[1600px] mx-auto px-6 lg:px-10 py-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <p className="text-[10px] tracking-[0.2em] uppercase text-cream/40">
+                © MMXXVI Evergreen Fashion
+              </p>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                {footerLegal.map((l) => (
+                  <button
+                    key={l}
+                    className="text-[10px] tracking-[0.15em] uppercase text-cream/40 hover:text-crimson transition-colors"
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <p className="hidden sm:block text-[10px] tracking-[0.2em] uppercase text-cream/40">
+                Paris · Milano · Tokyo · New York
+              </p>
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                aria-label="Back to top"
+                className="group flex items-center gap-3 text-[10px] tracking-[0.2em] uppercase text-cream/60 hover:text-crimson transition-colors"
+              >
+                <span className="hidden sm:inline">Back to top</span>
+                <span className="w-9 h-9 grid place-items-center rounded-full border border-cream/25 group-hover:border-crimson group-hover:-translate-y-0.5 transition-all">
+                  <ArrowUp size={14} />
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </footer>

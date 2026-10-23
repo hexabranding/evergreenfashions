@@ -1,11 +1,19 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Check, Package, Truck, MapPin, ArrowRight } from "lucide-react";
+import { Check, Package, Truck, MapPin, ArrowRight, Smartphone, ShieldCheck } from "lucide-react";
 import { useCart } from "@/context/CartContext";
+import { ordersApi } from "@/api/orders";
 import { parsePrice } from "@/data/products";
 
 export default function Confirmation() {
-  const { order } = useCart();
+  const { order, updateOrder } = useCart();
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [devOtp, setDevOtp] = useState("");
+  const [verified, setVerified] = useState(!!order?.phoneVerified);
 
   if (!order) {
     return (
@@ -19,6 +27,39 @@ export default function Confirmation() {
       </section>
     );
   }
+
+  const canVerifyOtp =
+    typeof order.id === "string" &&
+    order.id.startsWith("order-") &&
+    (order.shipping?.phone || "").replace(/\D/g, "").length >= 7;
+
+  const sendOtp = async () => {
+    setOtpError("");
+    setOtpLoading(true);
+    try {
+      const res = await ordersApi.requestConfirmOtp(order.id);
+      setDevOtp(res.developmentOtp || "");
+      setOtpSent(true);
+    } catch (err) {
+      setOtpError(err?.message || "Could not send the OTP. Please try again.");
+    }
+    setOtpLoading(false);
+  };
+
+  const verifyOtp = async (event) => {
+    event.preventDefault();
+    if (otp.length !== 6) return setOtpError("Enter the 6-digit code");
+    setOtpError("");
+    setOtpLoading(true);
+    try {
+      await ordersApi.verifyConfirmOtp(order.id, otp);
+      setVerified(true);
+      updateOrder({ phoneVerified: true });
+    } catch (err) {
+      setOtpError(err?.message || "The OTP is invalid.");
+    }
+    setOtpLoading(false);
+  };
 
   const paymentDescription = () => {
     const method = order.payment?.method || "card";
@@ -100,6 +141,87 @@ export default function Confirmation() {
               </div>
             </div>
           </div>
+
+          {/* Phone verification */}
+          {canVerifyOtp && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+              className="border border-border p-6 mb-6"
+            >
+              {verified ? (
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-ink text-cream flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium">Phone Verified</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {order.shipping.phone} has been confirmed for this order.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start gap-3 mb-4">
+                    <Smartphone className="w-4 h-4 text-crimson mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium">Verify Your Phone</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        Confirm the booking by entering the 6-digit code sent to {order.shipping.phone}.
+                      </div>
+                    </div>
+                  </div>
+
+                  {otpSent ? (
+                    <form onSubmit={verifyOtp} className="flex flex-col gap-3">
+                      <input
+                        autoFocus
+                        inputMode="numeric"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="Enter 6-digit OTP"
+                        className="w-full border border-border px-4 py-3 text-sm text-center tracking-[0.4em] focus:outline-none focus:border-foreground transition-colors"
+                      />
+                      {devOtp && (
+                        <p className="text-[10px] text-muted-foreground">Development OTP: <strong>{devOtp}</strong></p>
+                      )}
+                      {otpError && <p className="text-[11px] text-crimson">{otpError}</p>}
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="submit"
+                          disabled={otpLoading}
+                          className="bg-ink text-cream px-6 py-3 text-[11px] tracking-[0.2em] uppercase hover:bg-crimson transition-colors disabled:opacity-60"
+                        >
+                          {otpLoading ? "Verifying…" : "Verify OTP"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendOtp()}
+                          disabled={otpLoading}
+                          className="text-[11px] tracking-wider uppercase text-muted-foreground hover:text-foreground underline"
+                        >
+                          Resend code
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      {otpError && <p className="text-[11px] text-crimson mb-3">{otpError}</p>}
+                      <button
+                        onClick={sendOtp}
+                        disabled={otpLoading}
+                        className="w-full border border-foreground py-3 text-[11px] tracking-[0.25em] uppercase hover:bg-ink hover:text-cream transition-colors disabled:opacity-60"
+                      >
+                        {otpLoading ? "Sending…" : "Send OTP"}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </motion.div>
+          )}
 
           {/* Timeline */}
           <div className="border border-border p-6 mb-6">
@@ -201,6 +323,12 @@ export default function Confirmation() {
               {order.shipping.address}<br />
               {order.shipping.city}, {order.shipping.zip}<br />
               {order.shipping.country}
+              {order.shipping.phone && (
+                <>
+                  <br />
+                  {order.shipping.phone}
+                </>
+              )}
             </div>
           </div>
 

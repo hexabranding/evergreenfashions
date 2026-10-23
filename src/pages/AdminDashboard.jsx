@@ -9,6 +9,7 @@ import OrderDetailPanel from "@/components/OrderDetailPanel";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import { authApi } from "@/api/auth";
+import { getRentalDueDate, isRentalOverdue, getOrderName, getOrderItemNames, getOrderSearchText } from "@/lib/utils";
 import {
   LayoutDashboard,
   Package,
@@ -123,7 +124,20 @@ const statusColors = {
   Shipped: "bg-indigo-100 text-indigo-800",
   Delivered: "bg-emerald-100 text-emerald-800",
   Returned: "bg-gray-100 text-gray-800",
+  confirmed: "bg-blue-100 text-blue-800",
+  processing: "bg-sky-100 text-sky-800",
+  preparing: "bg-amber-100 text-amber-800",
+  shipped: "bg-indigo-100 text-indigo-800",
+  delivered: "bg-emerald-100 text-emerald-800",
+  cancelled: "bg-gray-200 text-gray-700",
+  returned: "bg-gray-100 text-gray-800",
+  return_requested: "bg-amber-100 text-amber-800",
   active: "bg-emerald-100 text-emerald-800",
+  pending_return: "bg-amber-100 text-amber-800",
+  awaiting_inspection: "bg-yellow-100 text-yellow-800",
+  inspected: "bg-blue-100 text-blue-800",
+  deposit_refunded: "bg-emerald-100 text-emerald-800",
+  completed: "bg-gray-100 text-gray-800",
   paused: "bg-gray-100 text-gray-800",
   pending: "bg-amber-100 text-amber-800",
   suspended: "bg-red-100 text-red-800",
@@ -300,6 +314,7 @@ export default function AdminDashboard({ isVendor }) {
 
   const panelApiOrders = isVendorPanel ? vendorApiOrders : adminApiOrders;
   const ordersLoading = isVendorPanel ? vendorOrdersLoading : adminOrdersLoading;
+  const orderNameScope = isVendorPanel ? currentUser?.id || currentUser?.vendorStore?.id || null : null;
 
   const orders = useMemo(() => {
     const merged = [...contextOrders];
@@ -1043,7 +1058,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                     className="flex items-center justify-between px-6 py-4 hover:bg-secondary/50 transition-colors"
                   >
                     <div className="flex items-center gap-6">
-                      <span className="text-sm text-muted-foreground font-mono">{order.id?.slice(-8)}</span>
+                      <span className="text-sm text-foreground min-w-0 truncate max-w-[14rem]" title={getOrderItemNames(order, orderNameScope).join(", ")}>{getOrderName(order, orderNameScope)}</span>
                       <span className="text-sm text-muted-foreground">{new Date(order.date).toLocaleDateString()}</span>
                       <span className="text-sm text-foreground">{order.items?.length || 0} items</span>
                     </div>
@@ -2777,7 +2792,7 @@ const [newVendorForm, setNewVendorForm] = useState({
     const filteredAdminOrders = normalOrders.filter((o) => {
       if (o.rentalDetails) return false;
       const matchesSearch =
-        (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
+        getOrderSearchText(o, orderNameScope).includes(orderSearch.toLowerCase().trim()) ||
         (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
       const matchesStatus = orderStatusFilter === "All" || o.status === orderStatusFilter;
       return matchesSearch && matchesStatus;
@@ -2787,10 +2802,12 @@ const [newVendorForm, setNewVendorForm] = useState({
     const orderStatusCounts = {
       All: filteredAdminOrders.length,
       confirmed: filteredAdminOrders.filter((o) => o.status === "confirmed").length,
+      processing: filteredAdminOrders.filter((o) => o.status === "processing").length,
       preparing: filteredAdminOrders.filter((o) => o.status === "preparing").length,
       shipped: filteredAdminOrders.filter((o) => o.status === "shipped").length,
       delivered: filteredAdminOrders.filter((o) => o.status === "delivered").length,
       return_requested: filteredAdminOrders.filter((o) => o.status === "return_requested").length,
+      returned: filteredAdminOrders.filter((o) => o.status === "returned").length,
       cancelled: filteredAdminOrders.filter((o) => o.status === "cancelled").length,
     };
 
@@ -2808,7 +2825,7 @@ const [newVendorForm, setNewVendorForm] = useState({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search orders by ID or customer name..."
+              placeholder="Search orders by product name or customer name..."
               value={orderSearch}
               onChange={(e) => setOrderSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
@@ -2820,7 +2837,7 @@ const [newVendorForm, setNewVendorForm] = useState({
             className="px-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors appearance-none cursor-pointer"
           >
             {Object.keys(orderStatusCounts).map((s) => (
-              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
+              <option key={s} value={s}>{s === "All" ? "All Statuses" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
             ))}
           </select>
         </div>
@@ -2833,7 +2850,7 @@ const [newVendorForm, setNewVendorForm] = useState({
 
         <div className="bg-cream border border-border overflow-hidden">
           <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
-            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Order Name</div>
             <div className="col-span-2">Customer</div>
             <div className="col-span-2">Items</div>
             <div className="col-span-2">Date</div>
@@ -2857,7 +2874,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                       className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
                       onClick={() => setExpandedAdminOrder(isExpanded ? null : order.id)}
                     >
-                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground min-w-0 truncate" title={getOrderItemNames(order, orderNameScope).join(", ") || order.id}>{getOrderName(order, orderNameScope)}</div>
                       <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
@@ -2902,7 +2919,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   </span>
                                 )
                               )}
-                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                              {["confirmed", "processing", "preparing", "shipped", "delivered", "returned", "cancelled"].map((status) => (
                                 <button
                                   key={status}
                                   onClick={(e) => {
@@ -2944,34 +2961,40 @@ const [newVendorForm, setNewVendorForm] = useState({
     const rentalOrders = orders.filter((o) => o.rentalDetails);
     const filteredRentalOrders = rentalOrders.filter((o) => {
       const matchesSearch =
-        (o.id || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
+        getOrderSearchText(o, orderNameScope).includes(orderSearch.toLowerCase().trim()) ||
         (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(orderSearch.toLowerCase());
-      const matchesStatus = adminRentalOrderStatusFilter === "All" || 
-        o.status === adminRentalOrderStatusFilter ||
-        o.rentalStatus === adminRentalOrderStatusFilter;
+      let matchesStatus = true;
+      if (adminRentalOrderStatusFilter === "Overdue") {
+        matchesStatus = isRentalOverdue(o);
+      } else if (adminRentalOrderStatusFilter !== "All") {
+        matchesStatus =
+          o.status === adminRentalOrderStatusFilter ||
+          o.rentalStatus === adminRentalOrderStatusFilter;
+      }
       return matchesSearch && matchesStatus;
     });
     const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
-    const rentalStatusCounts = {
-      All: rentalOrders.length,
-      confirmed: rentalOrders.filter((o) => o.status === "confirmed").length,
-      preparing: rentalOrders.filter((o) => o.status === "preparing").length,
-      shipped: rentalOrders.filter((o) => o.status === "shipped").length,
-      delivered: rentalOrders.filter((o) => o.status === "delivered").length,
-      pending_return: rentalOrders.filter((o) => o.rentalStatus === "pending_return").length,
-      awaiting_inspection: rentalOrders.filter((o) => o.rentalStatus === "awaiting_inspection").length,
-      deposit_refunded: rentalOrders.filter((o) => o.rentalStatus === "deposit_refunded").length,
-      cancelled: rentalOrders.filter((o) => o.status === "cancelled").length,
-    };
+    const rentalFilterStatuses = [
+      "confirmed", "preparing", "shipped", "delivered", "active",
+      "pending_return", "awaiting_inspection", "inspected", "deposit_refunded",
+      "completed", "cancelled", "Overdue",
+    ];
+    const rentalStatusCounts = { All: rentalOrders.length };
+    rentalFilterStatuses.forEach((s) => {
+      rentalStatusCounts[s] = s === "Overdue"
+        ? rentalOrders.filter((o) => isRentalOverdue(o)).length
+        : rentalOrders.filter((o) => o.status === s || o.rentalStatus === s).length;
+    });
 
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard icon={Repeat} label="Total Rental Orders" value={rentalOrders.length} index={0} />
           <StatCard icon={Clock} label="Pending Return" value={rentalStatusCounts.pending_return + rentalStatusCounts.awaiting_inspection} index={1} />
           <StatCard icon={Package} label="Shipped" value={rentalStatusCounts.shipped} index={2} />
           <StatCard icon={CheckCircle} label="Deposit Refunded" value={rentalStatusCounts.deposit_refunded} index={3} />
+          <StatCard icon={AlertTriangle} label="Overdue" value={rentalStatusCounts.Overdue} index={4} />
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4">
@@ -2979,7 +3002,7 @@ const [newVendorForm, setNewVendorForm] = useState({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search rental orders by ID or customer name..."
+              placeholder="Search rental orders by product name or customer name..."
               value={orderSearch}
               onChange={(e) => setOrderSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
@@ -3004,7 +3027,7 @@ const [newVendorForm, setNewVendorForm] = useState({
 
         <div className="bg-cream border border-border overflow-hidden">
           <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
-            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Order Name</div>
             <div className="col-span-2">Customer</div>
             <div className="col-span-2">Items</div>
             <div className="col-span-2">Rental Period</div>
@@ -3018,6 +3041,8 @@ const [newVendorForm, setNewVendorForm] = useState({
                 const isExpanded = expandedAdminRentalOrder === order.id;
                 const rentalStepIds = rentalStatusSteps.map((s) => s.id);
                 const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
+                const dueDate = getRentalDueDate(order);
+                const overdue = isRentalOverdue(order);
                 return (
                   <motion.div
                     key={order.id}
@@ -3030,16 +3055,27 @@ const [newVendorForm, setNewVendorForm] = useState({
                       className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
                       onClick={() => setExpandedAdminRentalOrder(isExpanded ? null : order.id)}
                     >
-                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground min-w-0 truncate" title={getOrderItemNames(order, orderNameScope).join(", ") || order.id}>{getOrderName(order, orderNameScope)}</div>
                       <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
                         {order.rentalDetails?.endDate ? new Date(order.rentalDetails.endDate).toLocaleDateString() : "-"}
                         {order.rentalDetails?.rentalDays ? ` (${order.rentalDetails.rentalDays}d)` : ""}
+                        {dueDate && (
+                          <span className="block text-[11px] mt-0.5 text-muted-foreground">
+                            Due {dueDate.toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
-                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
-                      <div className="md:col-span-1"><StatusBadge status={order.rentalStatus || order.status} /></div>
+                      <div className="md:col-span-1">
+                        <StatusBadge status={order.rentalStatus || order.status} />
+                        {overdue && (
+                          <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                            <AlertTriangle className="w-3 h-3" /> Overdue
+                          </span>
+                        )}
+                      </div>
                       <div className="md:col-span-2 flex items-center gap-1">
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedAdminRentalOrder(isExpanded ? null : order.id); }}
@@ -3083,10 +3119,19 @@ const [newVendorForm, setNewVendorForm] = useState({
                                       <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
                                     </div>
                                   )}
-                                  {order.rentalDetails.pricePerDay && (
+                                  {order.rentalDetails.rentalPricePerDay && (
                                     <div>
                                       <p className="text-muted-foreground text-xs">Price Per Day</p>
-                                      <p className="text-foreground">${order.rentalDetails.pricePerDay}</p>
+                                      <p className="text-foreground">${order.rentalDetails.rentalPricePerDay}</p>
+                                    </div>
+                                  )}
+                                  {dueDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Return Due</p>
+                                      <p className={overdue ? "text-red-600 font-medium" : "text-foreground"}>
+                                        {dueDate.toLocaleDateString()}
+                                        {overdue && " · Overdue"}
+                                      </p>
                                     </div>
                                   )}
                                 </div>
@@ -3151,7 +3196,7 @@ const [newVendorForm, setNewVendorForm] = useState({
 
                             <OrderDetailPanel order={order} showCustomer={true} />
                             <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
-                              {order.rentalDetails && order.returnRequested && order.rentalStatus === "pending_return" && (
+                              {order.rentalDetails && order.returnRequested && ["pending_return", "awaiting_inspection"].includes(order.rentalStatus) && (
                                 <>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "passed", ""); }}
@@ -3173,6 +3218,20 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   </button>
                                 </>
                               )}
+                              {order.rentalDetails && order.returnRequested && order.status === "delivered" && order.rentalStatus === "pending_return" && (
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Confirm Return Received
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
+                              )}
                               {order.status === "return_requested" && (
                                 (order.returnPhotos || []).length > 0 ? (
                                   <button
@@ -3187,7 +3246,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   </span>
                                 )
                               )}
-                              {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
+                              {rentalStatusSteps.map((step) => {
                                 const currentRentalStepId = order.rentalStatus || order.status;
                                 const currentIdx = rentalStatusSteps.findIndex((s) => s.id === currentRentalStepId);
                                 const stepIdx = rentalStatusSteps.findIndex((s) => s.id === step.id);

@@ -38,7 +38,7 @@ export default function ImageZoom({ images, mainImage }) {
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <div className="aspect-[3/4] bg-secondary overflow-hidden">
+      <div className="aspect-[4/5] bg-secondary overflow-hidden">
         <img
           src={currentImg}
           alt=""

@@ -13,4 +13,6 @@ export const ordersApi = {
   confirmReturn: (id) => api.post(`/orders/${id}/confirm-return`),
   inspectOrder: (id, inspectionStatus, notes) => api.post(`/orders/${id}/inspect`, { inspectionStatus, notes }),
   refundDeposit: (id, amount) => api.post(`/orders/${id}/refund-deposit`, { amount }),
+  requestConfirmOtp: (id) => api.post(`/orders/${id}/confirm-otp/request`),
+  verifyConfirmOtp: (id, otp) => api.post(`/orders/${id}/confirm-otp/verify`, { otp }),
 };

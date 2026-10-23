@@ -1,6 +1,6 @@
 import { parsePrice } from "@/data/products";
 import { ReturnPhotoGallery } from "@/components/ReturnPhotos";
-import { Clock, MapPin, CreditCard, Package, User, Camera, AlertCircle } from "lucide-react";
+import { Clock, MapPin, CreditCard, Package, User, Camera, AlertCircle, Hash } from "lucide-react";
 
 function formatShippingName(shipping) {
   if (!shipping) return "—";
@@ -37,6 +37,17 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
   return (
     <div className="mt-4 pt-4 border-t border-border/60 space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+            <Hash size={12} /> Order ID
+          </p>
+          <p className="text-sm text-foreground font-mono break-all">{order.id || "—"}</p>
+          {(order.createdAt || order.date) && (
+            <p className="text-xs text-muted-foreground">
+              Placed {new Date(order.createdAt || order.date).toLocaleDateString()}
+            </p>
+          )}
+        </div>
         {showCustomer && (
           <div className="space-y-1">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">

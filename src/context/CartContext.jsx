@@ -162,7 +162,7 @@ export function CartProvider({ children }) {
   const cartTotal = Math.max(0, cartSubtotal - discount);
 
   const placeOrder = useCallback(
-    (shippingInfo, paymentMethod) => {
+    async (shippingInfo, paymentMethod) => {
       const newOrder = createSharedOrder(
         cartItems,
         shippingInfo,
@@ -172,6 +172,7 @@ export function CartProvider({ children }) {
         discount
       );
 
+      let savedOrder = newOrder;
       // Also save to backend MongoDB
       try {
         const hasRental = cartItems.some((item) => item.isRental);
@@ -191,24 +192,31 @@ export function CartProvider({ children }) {
               rentalPricePerDay: cartItems.find((i) => i.isRental)?.rentalDetails?.rentalPricePerDay || 0,
             }
           : null;
-        ordersApi.create({
+        const backendOrder = await ordersApi.create({
           items: backendItems,
           coupon: coupon || null,
           shipping: shippingInfo,
           payment: paymentMethod,
           rentalDetails,
-        }).catch(() => {});
+        });
+        // Keep the local order shape (used by the Confirmation page) but swap in
+        // the real backend id so post-order actions (OTP, status) can find it.
+        savedOrder = { ...newOrder, id: backendOrder._id || backendOrder.id, phoneVerified: !!backendOrder.phoneVerified };
       } catch {
         // Backend might be unreachable; local order is still saved
       }
 
-      setOrder(newOrder);
+      setOrder(savedOrder);
       setCartItems([]);
       setCoupon(null);
-      return newOrder;
+      return savedOrder;
     },
     [cartItems, coupon, discount, createSharedOrder, currentUser?.id]
   );
+
+  const updateOrder = useCallback((patch) => {
+    setOrder((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
 
   const toggleWishlist = useCallback((product) => {
     if (!isAuthenticated) {
@@ -241,6 +249,7 @@ export function CartProvider({ children }) {
         updateQty,
         order,
         placeOrder,
+        updateOrder,
         wishlist,
         toggleWishlist,
         isWishlisted,

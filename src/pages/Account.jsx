@@ -22,6 +22,7 @@ import { useOrders } from "@/context/OrderContext";
 import { authApi } from "@/api/auth";
 import { ReturnPhotoGallery, ReturnPhotoUploader } from "@/components/ReturnPhotos";
 import { compressImage, MAX_RETURN_PHOTOS } from "@/lib/image";
+import { getRentalDueDate, isRentalOverdue } from "@/lib/utils";
 import { parsePrice } from "@/data/products";
 
 const tabs = [
@@ -34,9 +35,11 @@ const tabs = [
 
 const statusColors = {
   confirmed: "bg-blue-100 text-blue-700",
+  processing: "bg-sky-100 text-sky-700",
   preparing: "bg-amber-100 text-amber-700",
   shipped: "bg-purple-100 text-purple-700",
   delivered: "bg-emerald-100 text-emerald-700",
+  active: "bg-emerald-100 text-emerald-700",
   returned: "bg-red-100 text-red-700",
   cancelled: "bg-gray-100 text-gray-700",
   return_requested: "bg-amber-100 text-amber-700",
@@ -839,7 +842,7 @@ export default function Account() {
                 <div className="bg-secondary rounded-sm p-10 text-center">
                   <Calendar size={40} className="mx-auto text-muted-foreground mb-3" />
                   <p className="text-muted-foreground mb-4">No rental orders yet</p>
-                  <Link to="/rentals" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
+                  <Link to="/rental" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
                     Browse Rentals
                   </Link>
                 </div>
@@ -849,6 +852,8 @@ export default function Account() {
                     const isExpanded = expandedOrder === order.id;
                     const rentalStepIds = rentalStatusSteps.map((s) => s.id);
                     const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
+                    const dueDate = getRentalDueDate(order);
+                    const overdue = isRentalOverdue(order);
                     return (
                       <motion.div
                         key={order.id}
@@ -892,6 +897,11 @@ export default function Account() {
                               <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-medium ${statusColors[order.rentalStatus || order.status] || "bg-gray-100 text-gray-600"}`}>
                                 {(order.rentalStatus || order.status)?.replace("_", " ")}
                               </span>
+                              {overdue && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
+                                  Overdue
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-muted-foreground">
                               {new Date(order.date).toLocaleDateString("en-US", {
@@ -901,6 +911,14 @@ export default function Account() {
                               })}
                               <span className="mx-1.5">·</span>
                               {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                              {dueDate && (
+                                <>
+                                  <span className="mx-1.5">·</span>
+                                  <span className={overdue ? "text-red-600 font-medium" : ""}>
+                                    Due back {dueDate.toLocaleDateString()}
+                                  </span>
+                                </>
+                              )}
                             </p>
                           </div>
                           <div className="flex items-center gap-4">
@@ -944,10 +962,19 @@ export default function Account() {
                                           <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
                                         </div>
                                       )}
-                                      {order.rentalDetails.pricePerDay && (
+                                      {order.rentalDetails.rentalPricePerDay && (
                                         <div>
                                           <p className="text-muted-foreground text-xs">Price Per Day</p>
-                                          <p className="text-foreground">{parsePrice(order.rentalDetails.pricePerDay)}</p>
+                                          <p className="text-foreground">{parsePrice(order.rentalDetails.rentalPricePerDay)}</p>
+                                        </div>
+                                      )}
+                                      {dueDate && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Return Due</p>
+                                          <p className={overdue ? "text-red-600 font-medium" : "text-foreground"}>
+                                            {dueDate.toLocaleDateString()}
+                                            {overdue && " · Overdue"}
+                                          </p>
                                         </div>
                                       )}
                                     </div>
@@ -1111,7 +1138,7 @@ export default function Account() {
                                     Total: {parsePrice(order.total)}
                                   </p>
                                   <div className="flex items-center gap-3">
-                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && (
+                                    {order.status !== "cancelled" && order.status !== "delivered" && order.status !== "returned" && !["delivered", "active"].includes(order.rentalStatus) && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); setCancelOrderId(order.id); setCancelReason(""); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"
@@ -1119,7 +1146,7 @@ export default function Account() {
                                         Cancel Delivery
                                       </button>
                                     )}
-                                    {order.status === "delivered" && !order.returnRequested && (
+                                    {!order.returnRequested && (order.status === "delivered" || ["delivered", "active"].includes(order.rentalStatus)) && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); openReturnModal(order.id); }}
                                         className="text-xs text-crimson hover:text-crimson/80 transition-colors underline"

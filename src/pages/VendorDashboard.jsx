@@ -1,6 +1,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useOrders } from "@/context/OrderContext";
 import { allProducts, parsePrice } from "@/data/products";
+import { getRentalDueDate, isRentalOverdue, getOrderName, getOrderItemNames, getOrderSearchText } from "@/lib/utils";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,7 +23,6 @@ import {
   CheckCircle,
   AlertCircle,
   User,
-  MessageSquare,
   Wallet,
   ArrowUpRight,
   ArrowDownRight,
@@ -45,7 +45,6 @@ import {
   CreditCard,
   Settings,
   Inbox,
-  Mail,
   MailOpen,
   Reply,
   MoreVertical,
@@ -67,7 +66,6 @@ const TABS = [
   { key: "inventory", label: "Inventory", icon: Tag },
   { key: "orders", label: "Orders", icon: ShoppingBag },
   { key: "rentalOrders", label: "Rental Orders", icon: RefreshCw },
-  { key: "messages", label: "Messages", icon: MessageSquare },
   { key: "earnings", label: "Earnings", icon: DollarSign },
   { key: "ads", label: "Advertisements", icon: Image },
   { key: "withdrawals", label: "Withdrawals", icon: Wallet },
@@ -101,48 +99,6 @@ const STATUS_COLORS = {
   processing: "bg-blue-100 text-blue-800",
   cancelled: "bg-gray-100 text-gray-800",
 };
-
-const MOCK_MESSAGES = [
-  {
-    id: "msg-1",
-    customerName: "Isabelle Moreau",
-    customerEmail: "isabelle@example.com",
-    subject: "Size availability for Noir Blazer",
-    message: "Hi, I wanted to check if the Noir Blazer will be available in size M soon? It seems to be out of stock.",
-    date: "2026-07-24T10:30:00Z",
-    read: false,
-    replies: [],
-    productId: "noir-blazer",
-  },
-  {
-    id: "msg-2",
-    customerName: "Luca Bianchi",
-    customerEmail: "luca@example.com",
-    subject: "Rental return question",
-    message: "What's the process for returning the Silk Evening Gown? Do I need to dry clean it first?",
-    date: "2026-07-23T14:15:00Z",
-    read: true,
-    replies: [
-      {
-        id: "reply-1",
-        message: "Hi Luca, you can return the gown as-is. We handle professional cleaning. Just ensure it's in the garment bag provided.",
-        date: "2026-07-23T15:00:00Z",
-      },
-    ],
-    productId: "silk-evening-gown",
-  },
-  {
-    id: "msg-3",
-    customerName: "Amara Keita",
-    customerEmail: "amara@example.com",
-    subject: "Custom order inquiry",
-    message: "Do you offer custom sizing for the Cashmere Wrap Coat? I need a size between S and M.",
-    date: "2026-07-22T09:45:00Z",
-    read: true,
-    replies: [],
-    productId: "cashmere-wrap-coat",
-  },
-];
 
 const MOCK_RENTAL_ORDERS = [
   {
@@ -325,9 +281,6 @@ export default function VendorDashboard() {
   const [orderFilter, setOrderFilter] = useState("all");
   const [rentalFilter, setRentalFilter] = useState("all");
   const [expandedProduct, setExpandedProduct] = useState(null);
-  const [selectedMessage, setSelectedMessage] = useState(null);
-  const [replyText, setReplyText] = useState("");
-  const [messages, setMessages] = useState(MOCK_MESSAGES);
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const [withdrawalMethod, setWithdrawalMethod] = useState("bank");
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
@@ -463,6 +416,7 @@ export default function VendorDashboard() {
   const vendor = getVendorByUserId(currentUser.id) || { id: currentUser.id, userId: currentUser.id, storeName: currentUser.vendorStore?.name || `${currentUser.firstName} ${currentUser.lastName}`, description: currentUser.vendorStore?.description || "", commission: currentUser.vendorStore?.commission || 15, joinedAt: currentUser.createdAt || new Date().toISOString(), totalSales: 0, totalEarnings: 0, pendingPayout: 0 };
 
   const vendorProducts = vendorProductsList;
+  const orderNameScope = vendor?.id || currentUser?.id || null;
 
   const filteredVendorProducts = vendorProducts.filter((p) => {
     const q = productSearch.trim().toLowerCase();
@@ -501,7 +455,6 @@ export default function VendorDashboard() {
   const totalRevenue = vendor.totalEarnings;
   const pendingOrders = normalOrders.filter((o) => o.status !== "delivered" && o.status !== "returned").length;
   const rentalProducts = vendorProducts.filter((p) => p.rentalAvailable);
-  const unreadMessages = messages.filter((m) => !m.read).length;
 
   const totalSalesThisMonth = MONTHLY_EARNINGS[MONTHLY_EARNINGS.length - 1].sales;
   const totalRentalThisMonth = MONTHLY_EARNINGS[MONTHLY_EARNINGS.length - 1].rental;
@@ -578,34 +531,6 @@ export default function VendorDashboard() {
       const nextRentalStatus = rentalStepIds[idx + 1];
       updateRentalStatusApi(orderId, nextRentalStatus);
     }
-  };
-
-  const handleSendMessage = (msgId) => {
-    if (!replyText.trim()) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId
-          ? {
-              ...m,
-              replies: [
-                ...m.replies,
-                {
-                  id: `reply-${Date.now()}`,
-                  message: replyText,
-                  date: new Date().toISOString(),
-                },
-              ],
-            }
-          : m
-      )
-    );
-    setReplyText("");
-  };
-
-  const handleMarkRead = (msgId) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msgId ? { ...m, read: true } : m))
-    );
   };
 
   const handleWithdrawalRequest = (e) => {
@@ -740,7 +665,6 @@ export default function VendorDashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         <StatCard icon={Repeat} label="Rental Items" value={rentalProducts.length} index={4} />
-        <StatCard icon={MessageSquare} label="Unread Messages" value={unreadMessages} index={5} />
         <StatCard icon={Banknote} label="Pending Payout" value={parsePrice(vendor.pendingPayout)} index={6} />
         <StatCard icon={Star} label="Avg Rating" value="4.8" index={7} />
       </div>
@@ -763,11 +687,11 @@ export default function VendorDashboard() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
-                      <span className="font-medium text-foreground text-sm">{order.id}</span>
+                      <span className="font-medium text-foreground text-sm min-w-0 truncate" title={getOrderItemNames(order, orderNameScope).join(", ")}>{getOrderName(order, orderNameScope)}</span>
                       <StatusBadge status={order.status} />
                     </div>
                     <p className="text-xs text-muted-foreground truncate">
-                      {order.items.map((i) => i.name).join(", ")} — {parsePrice(order.total)}
+                      {getOrderItemNames(order, orderNameScope).length} item{getOrderItemNames(order, orderNameScope).length !== 1 ? "s" : ""} — {parsePrice(order.total)}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -1257,7 +1181,7 @@ export default function VendorDashboard() {
     const filteredVendorOrders = vendorOrders.filter((o) => {
       if (o.rentalDetails) return false;
       const matchesSearch =
-        (o.id || "").toLowerCase().includes(vendorOrderSearch.toLowerCase()) ||
+        getOrderSearchText(o, orderNameScope).includes(vendorOrderSearch.toLowerCase().trim()) ||
         (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorOrderSearch.toLowerCase());
       const matchesStatus = vendorOrderStatusFilter === "All" || o.status === vendorOrderStatusFilter;
       return matchesSearch && matchesStatus;
@@ -1288,7 +1212,7 @@ export default function VendorDashboard() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search orders by ID or customer name..."
+              placeholder="Search orders by product name or customer name..."
               value={vendorOrderSearch}
               onChange={(e) => setVendorOrderSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
@@ -1313,7 +1237,7 @@ export default function VendorDashboard() {
 
         <div className="bg-cream border border-border overflow-hidden">
           <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
-            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Order Name</div>
             <div className="col-span-2">Customer</div>
             <div className="col-span-2">Items</div>
             <div className="col-span-2">Date</div>
@@ -1337,7 +1261,7 @@ export default function VendorDashboard() {
                       className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
                       onClick={() => setExpandedVendorOrder(isExpanded ? null : order.id)}
                     >
-                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground min-w-0 truncate" title={getOrderItemNames(order, orderNameScope).join(", ") || order.id}>{getOrderName(order, orderNameScope)}</div>
                       <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
@@ -1423,7 +1347,7 @@ export default function VendorDashboard() {
   const renderRentalOrders = () => {
     const filteredVendorRentalOrders = rentalOrders.filter((o) => {
       const matchesSearch =
-        (o.id || "").toLowerCase().includes(vendorRentalOrderSearch.toLowerCase()) ||
+        getOrderSearchText(o, orderNameScope).includes(vendorRentalOrderSearch.toLowerCase().trim()) ||
         (o.customerName || o.shipping?.name || `${o.shipping?.firstName || ""} ${o.shipping?.lastName || ""}`).toLowerCase().includes(vendorRentalOrderSearch.toLowerCase());
       const matchesStatus = vendorRentalOrderStatusFilter === "All" ||
         o.status === vendorRentalOrderStatusFilter ||
@@ -1432,17 +1356,17 @@ export default function VendorDashboard() {
     });
     const sortedVendorRentalOrders = [...filteredVendorRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
-    const vendorRentalStatusCounts = {
-      All: filteredVendorRentalOrders.length,
-      confirmed: filteredVendorRentalOrders.filter((o) => o.status === "confirmed").length,
-      preparing: filteredVendorRentalOrders.filter((o) => o.status === "preparing").length,
-      shipped: filteredVendorRentalOrders.filter((o) => o.status === "shipped").length,
-      delivered: filteredVendorRentalOrders.filter((o) => o.status === "delivered").length,
-      pending_return: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "pending_return").length,
-      awaiting_inspection: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "awaiting_inspection").length,
-      deposit_refunded: filteredVendorRentalOrders.filter((o) => o.rentalStatus === "deposit_refunded").length,
-      cancelled: filteredVendorRentalOrders.filter((o) => o.status === "cancelled").length,
-    };
+    const vendorFilterStatuses = [
+      "confirmed", "preparing", "shipped", "delivered", "active",
+      "pending_return", "awaiting_inspection", "inspected", "deposit_refunded",
+      "completed", "cancelled",
+    ];
+    const vendorRentalStatusCounts = { All: filteredVendorRentalOrders.length };
+    vendorFilterStatuses.forEach((s) => {
+      vendorRentalStatusCounts[s] = filteredVendorRentalOrders.filter(
+        (o) => o.status === s || o.rentalStatus === s
+      ).length;
+    });
 
     return (
       <div className="space-y-6">
@@ -1458,7 +1382,7 @@ export default function VendorDashboard() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search rental orders by ID or customer name..."
+              placeholder="Search rental orders by product name or customer name..."
               value={vendorRentalOrderSearch}
               onChange={(e) => setVendorRentalOrderSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 transition-colors"
@@ -1483,7 +1407,7 @@ export default function VendorDashboard() {
 
         <div className="bg-cream border border-border overflow-hidden">
           <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
-            <div className="col-span-2">Order ID</div>
+            <div className="col-span-2">Order Name</div>
             <div className="col-span-2">Customer</div>
             <div className="col-span-2">Items</div>
             <div className="col-span-2">Rental Period</div>
@@ -1497,6 +1421,8 @@ export default function VendorDashboard() {
                 const isExpanded = expandedVendorRentalOrder === order.id;
                 const rentalStepIds = rentalStatusSteps.map((s) => s.id);
                 const currentRentalStep = rentalStepIds.indexOf(order.rentalStatus || order.status);
+                const dueDate = getRentalDueDate(order);
+                const overdue = isRentalOverdue(order);
                 return (
                   <motion.div
                     key={order.id}
@@ -1509,16 +1435,27 @@ export default function VendorDashboard() {
                       className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 hover:bg-secondary/50 transition-colors items-center cursor-pointer"
                       onClick={() => setExpandedVendorRentalOrder(isExpanded ? null : order.id)}
                     >
-                      <div className="md:col-span-2 text-sm font-mono text-foreground">{(order.id || "").slice(-12)}</div>
+                      <div className="md:col-span-2 text-sm text-foreground min-w-0 truncate" title={getOrderItemNames(order, orderNameScope).join(", ") || order.id}>{getOrderName(order, orderNameScope)}</div>
                       <div className="md:col-span-2 text-sm text-foreground">{order.customerName || order.shipping?.firstName || ""} {order.customerName ? "" : (order.shipping?.lastName || "")}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">{order.items?.length || 0} item{(order.items?.length || 0) !== 1 ? "s" : ""}</div>
                       <div className="md:col-span-2 text-sm text-muted-foreground">
                         {order.rentalDetails?.startDate ? new Date(order.rentalDetails.startDate).toLocaleDateString() : "-"} →{" "}
                         {order.rentalDetails?.endDate ? new Date(order.rentalDetails.endDate).toLocaleDateString() : "-"}
                         {order.rentalDetails?.rentalDays ? ` (${order.rentalDetails.rentalDays}d)` : ""}
+                        {dueDate && (
+                          <span className="block text-[11px] mt-0.5 text-muted-foreground">
+                            Due {dueDate.toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
-                      <div className="md:col-span-1 font-serif text-sm text-foreground">${(order.total || 0).toLocaleString()}</div>
-                      <div className="md:col-span-1"><StatusBadge status={order.rentalStatus || order.status} /></div>
+                      <div className="md:col-span-1">
+                        <StatusBadge status={order.rentalStatus || order.status} />
+                        {overdue && (
+                          <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
                       <div className="md:col-span-2 flex items-center gap-1">
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedVendorRentalOrder(isExpanded ? null : order.id); }}
@@ -1562,10 +1499,19 @@ export default function VendorDashboard() {
                                       <p className="text-foreground">{order.rentalDetails.rentalDays} days</p>
                                     </div>
                                   )}
-                                  {order.rentalDetails.pricePerDay && (
+                                  {order.rentalDetails.rentalPricePerDay && (
                                     <div>
                                       <p className="text-muted-foreground text-xs">Price Per Day</p>
-                                      <p className="text-foreground">${order.rentalDetails.pricePerDay}</p>
+                                      <p className="text-foreground">${order.rentalDetails.rentalPricePerDay}</p>
+                                    </div>
+                                  )}
+                                  {dueDate && (
+                                    <div>
+                                      <p className="text-muted-foreground text-xs">Return Due</p>
+                                      <p className={overdue ? "text-red-600 font-medium" : "text-foreground"}>
+                                        {dueDate.toLocaleDateString()}
+                                        {overdue && " · Overdue"}
+                                      </p>
                                     </div>
                                   )}
                                 </div>
@@ -1630,7 +1576,7 @@ export default function VendorDashboard() {
 
                             <OrderDetailPanel order={order} showCustomer={true} />
                             <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
-                              {order.rentalDetails && order.returnRequested && order.rentalStatus === "pending_return" && (
+                              {order.rentalDetails && order.returnRequested && ["pending_return", "awaiting_inspection"].includes(order.rentalStatus) && (
                                 <>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); inspectOrder(order.id, "passed", ""); }}
@@ -1652,6 +1598,20 @@ export default function VendorDashboard() {
                                   </button>
                                 </>
                               )}
+                              {order.rentalDetails && order.returnRequested && order.status === "delivered" && order.rentalStatus === "pending_return" && (
+                                (order.returnPhotos || []).length > 0 ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
+                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                  >
+                                    Confirm Return Received
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                                    Awaiting customer return photos
+                                  </span>
+                                )
+                              )}
                               {order.status === "return_requested" && (
                                 (order.returnPhotos || []).length > 0 ? (
                                   <button
@@ -1666,7 +1626,7 @@ export default function VendorDashboard() {
                                   </span>
                                 )
                               )}
-                              {rentalStatusSteps.filter((s) => s.id !== "completed").map((step) => {
+                              {rentalStatusSteps.map((step) => {
                                 const currentRentalStepId = order.rentalStatus || order.status;
                                 const currentIdx = rentalStatusSteps.findIndex((s) => s.id === currentRentalStepId);
                                 const stepIdx = rentalStatusSteps.findIndex((s) => s.id === step.id);
@@ -1711,139 +1671,6 @@ export default function VendorDashboard() {
       </div>
     );
   };
-
-  const renderMessages = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="eyebrow">Customer Messages</h2>
-        <span className="text-xs text-muted-foreground">{unreadMessages} unread</span>
-      </div>
-
-      <div className="grid lg:grid-cols-[320px_1fr] gap-6 min-h-[500px]">
-        <div className="bg-secondary border border-border/60 rounded-sm overflow-hidden">
-          <div className="p-4 border-b border-border/60">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search messages..."
-                className="w-full bg-cream border border-border/60 rounded-sm pl-9 pr-4 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ink/30"
-              />
-            </div>
-          </div>
-          <div className="overflow-y-auto max-h-[440px]">
-            {messages.map((msg) => (
-              <button
-                key={msg.id}
-                onClick={() => {
-                  setSelectedMessage(msg);
-                  handleMarkRead(msg.id);
-                }}
-                className={`w-full text-left p-4 border-b border-border/30 transition-colors hover:bg-cream/50 ${
-                  selectedMessage?.id === msg.id ? "bg-cream/70" : ""
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="relative">
-                    <div className="w-9 h-9 rounded-full bg-ink text-cream flex items-center justify-center text-xs font-medium flex-shrink-0">
-                      {msg.customerName.split(" ").map((n) => n[0]).join("")}
-                    </div>
-                    {!msg.read && (
-                      <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-crimson rounded-full" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-sm font-medium text-foreground truncate">{msg.customerName}</span>
-                      <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
-                        {new Date(msg.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">{msg.subject}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-secondary border border-border/60 rounded-sm flex flex-col">
-          {selectedMessage ? (
-            <>
-              <div className="p-5 border-b border-border/60">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-serif text-lg text-foreground">{selectedMessage.subject}</h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-sm text-muted-foreground">{selectedMessage.customerName}</span>
-                      <span className="text-xs text-muted-foreground">{selectedMessage.customerEmail}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(selectedMessage.date).toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                <div className="bg-cream/50 rounded-sm p-4">
-                  <p className="text-sm text-foreground leading-relaxed">{selectedMessage.message}</p>
-                </div>
-                {selectedMessage.replies.map((reply) => (
-                  <div key={reply.id} className="bg-ink/5 rounded-sm p-4 ml-8">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-medium text-foreground">You</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(reply.date).toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground leading-relaxed">{reply.message}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="p-4 border-t border-border/60">
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    placeholder="Type your reply..."
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage(selectedMessage.id)}
-                    className="flex-1 bg-cream border border-border/60 rounded-sm px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ink/30"
-                  />
-                  <button
-                    onClick={() => handleSendMessage(selectedMessage.id)}
-                    disabled={!replyText.trim()}
-                    className="btn-ink px-5 py-3 text-xs tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <Send size={14} />
-                    Send
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-              <div className="w-16 h-16 rounded-full bg-cream flex items-center justify-center mb-4">
-                <Mail size={24} className="text-muted-foreground" />
-              </div>
-              <p className="text-sm text-muted-foreground">Select a message to read and reply</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 
   const renderEarnings = () => {
     const maxEarning = Math.max(...MONTHLY_EARNINGS.map((m) => m.sales + m.rental));
@@ -2320,7 +2147,6 @@ export default function VendorDashboard() {
     inventory: renderInventory,
     orders: renderOrders,
     rentalOrders: renderRentalOrders,
-    messages: renderMessages,
     earnings: renderEarnings,
     ads: renderAds,
     withdrawals: renderWithdrawals,
@@ -2353,11 +2179,6 @@ export default function VendorDashboard() {
             >
               <Icon size={14} />
               {label}
-              {key === "messages" && unreadMessages > 0 && (
-                <span className="w-4 h-4 rounded-full bg-crimson text-cream text-[9px] flex items-center justify-center font-medium">
-                  {unreadMessages}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -2384,11 +2205,6 @@ export default function VendorDashboard() {
               >
                 <Icon size={16} />
                 {label}
-                {key === "messages" && unreadMessages > 0 && (
-                  <span className="ml-auto w-5 h-5 rounded-full bg-crimson text-cream text-[10px] flex items-center justify-center font-medium">
-                    {unreadMessages}
-                  </span>
-                )}
               </button>
             ))}
           </nav>

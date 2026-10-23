@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { Heart, Star, Truck, ShieldCheck, RotateCcw, ArrowLeft, Ruler, Calendar } from "lucide-react";
+import { Heart, Star, Truck, ShieldCheck, RotateCcw, ArrowLeft, Ruler, Calendar, Share2, Link2, MessageCircle, Send, Mail, Check, ArrowUpRight } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import SizeGuide from "@/components/SizeGuide";
@@ -11,6 +11,156 @@ import { useProducts } from "@/context/ProductContext";
 
 function getColorHex(c) {
   return colorMap[c] || "#ccc";
+}
+
+function ProductShare({ product, variant = "overlay" }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const wrapRef = useRef(null);
+
+  const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/product/${product.id}`;
+  const shareText = `${product.name} — ${parsePrice(product.price)} · Evergreen Fashion`;
+  const hasNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = shareUrl;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleClick = async () => {
+    if (hasNativeShare) {
+      try {
+        await navigator.share({ title: product.name, text: shareText, url: shareUrl });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+      }
+    }
+    setOpen((prev) => !prev);
+  };
+
+  const openShareWindow = (href) => {
+    window.open(href, "_blank", "noopener,noreferrer,width=640,height=560");
+    setOpen(false);
+  };
+
+  const targets = [
+    { label: "WhatsApp", icon: MessageCircle, href: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}` },
+    { label: "Telegram", icon: Send, href: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}` },
+    { label: "Facebook", badge: "f", href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}` },
+    { label: "X", badge: "X", href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}` },
+    { label: "Email", icon: Mail, href: `mailto:?subject=${encodeURIComponent(product.name)}&body=${encodeURIComponent(`${shareText}\n${shareUrl}`)}` },
+  ];
+
+  const isOverlay = variant === "overlay";
+
+  return (
+    <div className={`relative ${isOverlay ? "" : "ml-auto"}`} ref={wrapRef}>
+      <button
+        onClick={handleClick}
+        aria-label="Share this product"
+        className={
+          isOverlay
+            ? "w-10 h-10 bg-background/80 backdrop-blur rounded-full flex items-center justify-center hover:bg-background transition-colors"
+            : "flex items-center gap-1.5 border border-border px-3 py-1.5 text-[11px] tracking-[0.15em] uppercase text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
+        }
+      >
+        <Share2 className={isOverlay ? "w-4 h-4" : "w-3.5 h-3.5"} />
+        {!isOverlay && "Share"}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-52 bg-background border border-border shadow-xl z-50 p-1">
+          <ShareItems
+            targets={targets}
+            onOpen={openShareWindow}
+            copied={copied}
+            onCopy={copyLink}
+            hasNativeShare={hasNativeShare}
+            onNative={handleClick}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShareItems({ targets, onOpen, copied, onCopy, hasNativeShare, onNative }) {
+  return (
+    <>
+      {hasNativeShare && (
+        <button
+          onClick={onNative}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-foreground hover:bg-cream/60 transition-colors"
+        >
+          <Share2 className="w-3.5 h-3.5 text-muted-foreground" />
+          More share options
+        </button>
+      )}
+      <button
+        onClick={onCopy}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-cream/60"
+      >
+        {copied ? (
+          <>
+            <Check className="w-3.5 h-3.5 text-crimson" />
+            <span className="text-crimson">Link copied</span>
+          </>
+        ) : (
+          <>
+            <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-foreground">Copy link</span>
+          </>
+        )}
+      </button>
+      <div className="my-1 h-px bg-border" />
+      {targets.map((t) => (
+        <button
+          key={t.label}
+          onClick={() => onOpen(t.href)}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-foreground hover:bg-cream/60 transition-colors"
+        >
+          {t.icon ? (
+            <t.icon className="w-3.5 h-3.5 text-muted-foreground" />
+          ) : (
+            <span className="w-3.5 h-3.5 grid place-items-center text-[11px] font-medium text-muted-foreground">
+              {t.badge}
+            </span>
+          )}
+          <span className="flex-1 text-left">{t.label}</span>
+          <ArrowUpRight className="w-3 h-3 text-muted-foreground/60" />
+        </button>
+      ))}
+    </>
+  );
 }
 
 export default function ProductDetail() {
@@ -110,12 +260,33 @@ export default function ProductDetail() {
       <div className="grid lg:grid-cols-2 gap-12 lg:gap-16">
         {/* Image Gallery */}
         <motion.div initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
+          {/* Main image */}
+          <div className="relative">
+            <div className="aspect-[4/5] bg-secondary">
+              <ImageZoom images={productImages} mainImage={mainImage} />
+            </div>
+            <div className="absolute top-4 left-4 z-10 bg-background px-3 py-1.5 text-[10px] tracking-[0.2em] uppercase">
+              {product.tag}
+            </div>
+            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+              <button
+                onClick={() => toggleWishlist(product)}
+                aria-label="Add to wishlist"
+                className="w-10 h-10 bg-background/80 backdrop-blur rounded-full flex items-center justify-center hover:bg-background transition-colors"
+              >
+                <Heart className={`w-4 h-4 ${isWishlisted(product.name) ? "fill-crimson text-crimson" : ""}`} />
+              </button>
+              <ProductShare product={product} variant="overlay" />
+            </div>
+          </div>
+
           {/* Thumbnails */}
-          <div className="flex gap-3 mb-4">
+          <div className="flex gap-3 mt-4">
             {productImages.map((img, i) => (
               <button
                 key={i}
                 onClick={() => setMainImage(i)}
+                aria-label={`View image ${i + 1}`}
                 className={`w-16 h-20 bg-secondary overflow-hidden border-2 transition-colors ${
                   mainImage === i ? "border-foreground" : "border-transparent hover:border-border"
                 }`}
@@ -124,35 +295,20 @@ export default function ProductDetail() {
               </button>
             ))}
           </div>
-
-          {/* Main image */}
-          <div className="relative">
-            <div className="aspect-[3/4] bg-secondary">
-              <ImageZoom images={productImages} mainImage={mainImage} />
-            </div>
-            <div className="absolute top-4 left-4 z-10 bg-background px-3 py-1.5 text-[10px] tracking-[0.2em] uppercase">
-              {product.tag}
-            </div>
-            <button
-              onClick={() => toggleWishlist(product)}
-              className="absolute top-4 right-4 z-10 w-10 h-10 bg-background/80 backdrop-blur rounded-full flex items-center justify-center"
-            >
-              <Heart className={`w-4 h-4 ${isWishlisted(product.name) ? "fill-crimson text-crimson" : ""}`} />
-            </button>
-          </div>
         </motion.div>
 
         {/* Details */}
         <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.15 }} className="flex flex-col">
           <div className="mb-1"><span className="eyebrow text-crimson">{product.tag}</span></div>
           <h1 className="text-display text-4xl md:text-5xl lg:text-6xl mb-3">{product.name}</h1>
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-6 flex-wrap">
             <span className="font-serif text-2xl text-muted-foreground">{parsePrice(product.price)}</span>
             {product.rentalAvailable && (
               <span className="text-[11px] tracking-wider uppercase text-crimson border border-crimson/30 px-3 py-1">
                 Rent from {parsePrice(product.rentalPricePerDay)}/day
               </span>
             )}
+            <ProductShare product={product} variant="inline" />
           </div>
           <p className="text-muted-foreground leading-relaxed mb-8 max-w-lg">{product.description}</p>
 
