@@ -11,7 +11,7 @@ import { sendOrderConfirmationEmail } from '../mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '../../public/uploads');
+const uploadsDir = path.join(__dirname, '../../frontend/public/uploads');
 
 const MAX_RETURN_PHOTOS = 6;
 const MAX_PHOTO_CHARS = 9 * 1024 * 1024;
