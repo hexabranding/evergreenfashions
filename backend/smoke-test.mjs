@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import 'dotenv/config';
 
-const BASE = process.env.API_BASE || 'http://localhost:5001/api';
+const BASE = process.env.API_BASE || 'http://localhost:5001';
 const results = [];
 const check = (name, cond, extra = '') => {
   results.push(`${cond ? 'PASS' : 'FAIL'} - ${name}${extra ? ` (${extra})` : ''}`);

@@ -162,6 +162,23 @@ export function OrdersProvider({ children }) {
   const [orders, setOrders] = useState(() => loadState("ef_orders", []));
   const [customerApiOrders, setCustomerApiOrders] = useState([]);
   const [customerOrdersLoading, setCustomerOrdersLoading] = useState(false);
+  const [vendorApiOrders, setVendorApiOrders] = useState([]);
+  const [adminApiOrders, setAdminApiOrders] = useState([]);
+  const [vendorOrdersLoading, setVendorOrdersLoading] = useState(false);
+  const [adminOrdersLoading, setAdminOrdersLoading] = useState(false);
+
+  const updateOrderInAllStates = useCallback((orderId, updater) => {
+    const applyUpdate = (prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId && o._id !== orderId) return o;
+        return typeof updater === "function" ? updater(o) : { ...o, ...updater };
+      });
+
+    setOrders(applyUpdate);
+    setVendorApiOrders(applyUpdate);
+    setAdminApiOrders(applyUpdate);
+    setCustomerApiOrders(applyUpdate);
+  }, []);
   const [inventory, setInventory] = useState(() => {
     const cached = loadState("ef_inventory", null);
     if (cached) return cached;
@@ -344,50 +361,45 @@ const placeOrder = useCallback(
   );
 
   const updateOrderStatus = useCallback((orderId, newStatus) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          status: newStatus,
-          timeline: [...o.timeline, { status: newStatus, date: new Date().toISOString() }],
-        };
-      })
-    );
-  }, []);
+    updateOrderInAllStates(orderId, (o) => ({
+      ...o,
+      status: newStatus,
+      timeline: [
+        ...(o.timeline || []),
+        { status: newStatus, date: new Date().toISOString(), description: `Order ${newStatus}` },
+      ],
+    }));
+  }, [updateOrderInAllStates]);
 
   const returnOrder = useCallback(
     (orderId) => {
-      setOrders((prev) =>
-        prev.map((o) => {
-          if (o.id !== orderId) return o;
-          if (o.rentalDetails) {
-            return {
-              ...o,
-              returnRequested: true,
-              returnRequestedDate: new Date().toISOString(),
-              rentalStatus: "pending_return",
-              status: "delivered",
-              timeline: [
-                ...o.timeline,
-                { status: "pending_return", date: new Date().toISOString(), description: "Return requested by customer" },
-              ],
-            };
-          }
-          o.items.forEach((item) => {
-            if (item.selectedSize) {
-              restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
-            }
-          });
+      updateOrderInAllStates(orderId, (o) => {
+        if (o.rentalDetails) {
           return {
             ...o,
-            status: "returned",
-            timeline: [...o.timeline, { status: "returned", date: new Date().toISOString() }],
+            returnRequested: true,
+            returnRequestedDate: new Date().toISOString(),
+            rentalStatus: "pending_return",
+            status: "delivered",
+            timeline: [
+              ...(o.timeline || []),
+              { status: "pending_return", date: new Date().toISOString(), description: "Return requested by customer" },
+            ],
           };
-        })
-      );
+        }
+        o.items?.forEach((item) => {
+          if (item.selectedSize) {
+            restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
+          }
+        });
+        return {
+          ...o,
+          status: "returned",
+          timeline: [...(o.timeline || []), { status: "returned", date: new Date().toISOString() }],
+        };
+      });
     },
-    [restoreStock]
+    [restoreStock, updateOrderInAllStates]
   );
 
   const requestReturn = useCallback(async (orderId, reason, photos = []) => {
@@ -399,47 +411,44 @@ const placeOrder = useCallback(
       offline = true;
     }
     const photosDate = photos.length > 0 ? new Date().toISOString() : undefined;
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const photoFields = {
-          returnRequested: true,
-          returnRequestedDate: new Date().toISOString(),
-          returnReason: reason || "",
-          returnPhotos: photos,
-          returnPhotosDate: photosDate,
-        };
-        if (o.rentalDetails) {
-          return {
-            ...o,
-            ...photoFields,
-            rentalStatus: "pending_return",
-            status: "delivered",
-            timeline: [
-              ...o.timeline,
-              { status: "pending_return", date: new Date().toISOString(), description: reason || "Return requested by customer" },
-              ...(photos.length > 0
-                ? [{ status: "return_photos", date: photosDate, description: `${photos.length} return item photo(s) uploaded by customer` }]
-                : []),
-            ],
-          };
-        }
+    updateOrderInAllStates(orderId, (o) => {
+      const photoFields = {
+        returnRequested: true,
+        returnRequestedDate: new Date().toISOString(),
+        returnReason: reason || "",
+        returnPhotos: photos,
+        returnPhotosDate: photosDate,
+      };
+      if (o.rentalDetails) {
         return {
           ...o,
           ...photoFields,
-          status: "return_requested",
+          rentalStatus: "pending_return",
+          status: "delivered",
           timeline: [
-            ...o.timeline,
-            { status: "return_requested", date: new Date().toISOString(), description: reason || "Return requested by customer" },
+            ...(o.timeline || []),
+            { status: "pending_return", date: new Date().toISOString(), description: reason || "Return requested by customer" },
             ...(photos.length > 0
               ? [{ status: "return_photos", date: photosDate, description: `${photos.length} return item photo(s) uploaded by customer` }]
               : []),
           ],
         };
-      })
-    );
+      }
+      return {
+        ...o,
+        ...photoFields,
+        status: "return_requested",
+        timeline: [
+          ...(o.timeline || []),
+          { status: "return_requested", date: new Date().toISOString(), description: reason || "Return requested by customer" },
+          ...(photos.length > 0
+            ? [{ status: "return_photos", date: photosDate, description: `${photos.length} return item photo(s) uploaded by customer` }]
+            : []),
+        ],
+      };
+    });
     return { offline };
-  }, []);
+  }, [updateOrderInAllStates]);
 
   const uploadReturnPhotos = useCallback(async (orderId, photos = []) => {
     if (!photos || photos.length === 0) return { saved: [], offline: false };
@@ -452,120 +461,120 @@ const placeOrder = useCallback(
       if (!isOfflineError(err)) throw err;
       offline = true;
     }
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const merged = [...new Set([...(o.returnPhotos || []), ...saved])];
-        const added = merged.length - (o.returnPhotos?.length || 0);
-        return {
-          ...o,
-          returnPhotos: merged,
-          returnPhotosDate: new Date().toISOString(),
-          timeline:
-            added > 0
-              ? [
-                  ...o.timeline,
-                  {
-                    status: "return_photos",
-                    date: new Date().toISOString(),
-                    description: `${added} return item photo(s) uploaded by customer`,
-                  },
-                ]
-              : o.timeline,
-        };
-      })
-    );
+    updateOrderInAllStates(orderId, (o) => {
+      const merged = [...new Set([...(o.returnPhotos || []), ...saved])];
+      const added = merged.length - (o.returnPhotos?.length || 0);
+      return {
+        ...o,
+        returnPhotos: merged,
+        returnPhotosDate: new Date().toISOString(),
+        timeline:
+          added > 0
+            ? [
+                ...(o.timeline || []),
+                {
+                  status: "return_photos",
+                  date: new Date().toISOString(),
+                  description: `${added} return item photo(s) uploaded by customer`,
+                },
+              ]
+            : o.timeline,
+      };
+    });
     return { saved, offline };
-  }, []);
+  }, [updateOrderInAllStates]);
 
   const inspectOrder = useCallback(async (orderId, inspectionStatus, notes) => {
     try {
       const updated = await ordersApi.inspectOrder(orderId, inspectionStatus, notes);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? mapApiOrder(updated) : o)));
-      return;
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+        return;
+      }
     } catch {
       // Server unreachable or rejected — mirror the inspection locally.
     }
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const deposit = o.deposit || 0;
-        let refundAmount = 0;
-        let depositRefunded = false;
-        let rentalStatus = "awaiting_inspection";
-        let timelineEntry = { status: "inspected", date: new Date().toISOString(), description: `Inspection: ${inspectionStatus}` };
-        if (inspectionStatus === "passed") {
-          refundAmount = deposit;
-          depositRefunded = true;
-          rentalStatus = "deposit_refunded";
-          timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Deposit of €${deposit} refunded` };
-        } else if (inspectionStatus === "partial_refund") {
-          refundAmount = Math.round(deposit * 0.5);
-          depositRefunded = true;
-          rentalStatus = "deposit_refunded";
-          timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Partial refund of €${refundAmount} (damaged item)` };
-        }
-        return {
-          ...o,
-          inspectionStatus,
-          inspectedBy: "admin",
-          inspectedAt: new Date().toISOString(),
-          rentalStatus,
-          depositRefunded,
-          refundAmount,
-          timeline: [...o.timeline, timelineEntry],
-        };
-      })
-    );
-  }, []);
+    updateOrderInAllStates(orderId, (o) => {
+      const deposit = o.deposit || 0;
+      let refundAmount = 0;
+      let depositRefunded = false;
+      let rentalStatus = "awaiting_inspection";
+      let timelineEntry = { status: "inspected", date: new Date().toISOString(), description: `Inspection: ${inspectionStatus}` };
+      if (inspectionStatus === "passed") {
+        refundAmount = deposit;
+        depositRefunded = true;
+        rentalStatus = "deposit_refunded";
+        timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Deposit of €${deposit} refunded` };
+      } else if (inspectionStatus === "partial_refund") {
+        refundAmount = Math.round(deposit * 0.5);
+        depositRefunded = true;
+        rentalStatus = "deposit_refunded";
+        timelineEntry = { status: "deposit_refunded", date: new Date().toISOString(), description: `Partial refund of €${refundAmount} (damaged item)` };
+      }
+      return {
+        ...o,
+        inspectionStatus,
+        inspectedBy: "admin",
+        inspectedAt: new Date().toISOString(),
+        rentalStatus,
+        depositRefunded,
+        refundAmount,
+        timeline: [...(o.timeline || []), timelineEntry],
+      };
+    });
+  }, [updateOrderInAllStates]);
 
   const refundDeposit = useCallback(async (orderId, amount) => {
     try {
-      await ordersApi.refundDeposit(orderId, amount);
+      const updated = await ordersApi.refundDeposit(orderId, amount);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+        return;
+      }
     } catch {
       /* fallback handled locally */
     }
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        return { ...o, depositRefunded: true, refundAmount: amount, rentalStatus: "deposit_refunded" };
-      })
-    );
-  }, []);
+    updateOrderInAllStates(orderId, (o) => ({
+      ...o,
+      depositRefunded: true,
+      refundAmount: amount,
+      rentalStatus: "deposit_refunded",
+    }));
+  }, [updateOrderInAllStates]);
 
   const confirmReturn = useCallback(async (orderId) => {
+    updateOrderInAllStates(orderId, (o) => {
+      o.items?.forEach((item) => {
+        if (item.selectedSize) {
+          restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
+        }
+      });
+      return {
+        ...o,
+        status: "returned",
+        rentalStatus:
+          o.rentalDetails && o.rentalStatus === "pending_return" ? "awaiting_inspection" : o.rentalStatus,
+        timeline: [
+          ...(o.timeline || []),
+          {
+            status: "returned",
+            date: new Date().toISOString(),
+            description: o.rentalDetails
+              ? "Return received, inventory restored — awaiting inspection"
+              : "Return confirmed, inventory restored",
+          },
+        ],
+      };
+    });
     try {
-      await ordersApi.confirmReturn(orderId);
+      const updated = await ordersApi.confirmReturn(orderId);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+      }
     } catch {
       /* fallback handled locally */
     }
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        o.items.forEach((item) => {
-          if (item.selectedSize) {
-            restoreStock(item.vendorId || item.name, item.selectedSize, item.qty);
-          }
-        });
-        return {
-          ...o,
-          status: "returned",
-          rentalStatus:
-            o.rentalDetails && o.rentalStatus === "pending_return" ? "awaiting_inspection" : o.rentalStatus,
-          timeline: [
-            ...o.timeline,
-            {
-              status: "returned",
-              date: new Date().toISOString(),
-              description: o.rentalDetails
-                ? "Return received, inventory restored — awaiting inspection"
-                : "Return confirmed, inventory restored",
-            },
-          ],
-        };
-      })
-    );
-  }, [restoreStock]);
+  }, [restoreStock, updateOrderInAllStates]);
 
   const rentalStatusSteps = [
     { id: "confirmed", label: "Confirmed", icon: "✓" },
@@ -590,23 +599,20 @@ const placeOrder = useCallback(
       pending_return: "delivered",
       completed: "returned",
     };
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const mirrored = rentalToOrderStatus[newRentalStatus];
-        const canMirror = mirrored && !["cancelled", "returned", "return_requested"].includes(o.status);
-        return {
-          ...o,
-          rentalStatus: newRentalStatus,
-          status: canMirror ? mirrored : o.status,
-          timeline: [
-            ...o.timeline,
-            { status: newRentalStatus, date: new Date().toISOString(), description: `Rental stage: ${newRentalStatus}` },
-          ],
-        };
-      })
-    );
-  }, []);
+    const mirrored = rentalToOrderStatus[newRentalStatus];
+    updateOrderInAllStates(orderId, (o) => {
+      const canMirror = mirrored && !["cancelled", "returned", "return_requested"].includes(o.status);
+      return {
+        ...o,
+        rentalStatus: newRentalStatus,
+        status: canMirror ? mirrored : o.status,
+        timeline: [
+          ...(o.timeline || []),
+          { status: newRentalStatus, date: new Date().toISOString(), description: `Rental status: ${newRentalStatus}` },
+        ],
+      };
+    });
+  }, [updateOrderInAllStates]);
 
   const getVendorByUserId = useCallback(
     (userId) => {
@@ -671,11 +677,6 @@ const placeOrder = useCallback(
       })
     );
   }, []);
-
-  const [vendorApiOrders, setVendorApiOrders] = useState([]);
-  const [adminApiOrders, setAdminApiOrders] = useState([]);
-  const [vendorOrdersLoading, setVendorOrdersLoading] = useState(false);
-  const [adminOrdersLoading, setAdminOrdersLoading] = useState(false);
 
   const fetchVendorOrders = useCallback(async () => {
     setVendorOrdersLoading(true);
@@ -756,31 +757,40 @@ const placeOrder = useCallback(
   }, []);
 
   const updateOrderStatusApi = useCallback(async (orderId, status) => {
-    try {
-      await ordersApi.updateStatus(orderId, status);
-    } catch {
-      // fallback: update locally
-    }
     updateOrderStatus(orderId, status);
-  }, [updateOrderStatus]);
+    try {
+      const updated = await ordersApi.updateStatus(orderId, status);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+      }
+    } catch (err) {
+      console.error("Failed to sync order status with server:", err);
+    }
+  }, [updateOrderStatus, updateOrderInAllStates]);
 
   const updateRentalStatusApi = useCallback(async (orderId, rentalStatus) => {
-    try {
-      await ordersApi.updateRentalStatus(orderId, rentalStatus);
-    } catch {
-      // fallback: update locally
-    }
     updateRentalStatus(orderId, rentalStatus);
-  }, [updateRentalStatus]);
+    try {
+      const updated = await ordersApi.updateRentalStatus(orderId, rentalStatus);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+      }
+    } catch (err) {
+      console.error("Failed to sync rental status with server:", err);
+    }
+  }, [updateRentalStatus, updateOrderInAllStates]);
 
   const cancelOrderApi = useCallback(async (orderId, reason) => {
-    try {
-      await ordersApi.cancelOrder(orderId, reason);
-    } catch {
-      // fallback: update locally
-    }
     updateOrderStatus(orderId, "cancelled");
-  }, [updateOrderStatus]);
+    try {
+      const updated = await ordersApi.cancelOrder(orderId, reason);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+      }
+    } catch (err) {
+      console.error("Failed to cancel order on server:", err);
+    }
+  }, [updateOrderStatus, updateOrderInAllStates]);
 
   return (
     <OrderContext.Provider

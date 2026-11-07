@@ -319,12 +319,12 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid rental status' });
     }
 
-    if (status) {
+    if (status && order.status !== status) {
       order.status = status;
       order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
     }
 
-    if (rentalStatus) {
+    if (rentalStatus && order.rentalStatus !== rentalStatus) {
       order.rentalStatus = rentalStatus;
       order.timeline.push({ status: rentalStatus, date: new Date().toISOString(), description: `Rental status: ${rentalStatus}` });
 
