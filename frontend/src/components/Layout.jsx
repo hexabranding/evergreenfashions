@@ -132,7 +132,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground overflow-x-clip">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b border-border">
         <div className="max-w-[1600px] mx-auto px-6 py-5 flex items-center justify-between">

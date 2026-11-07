@@ -2215,13 +2215,13 @@ export default function VendorDashboard() {
 
       <div className="flex min-h-[calc(100vh-140px)] lg:min-h-screen">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex flex-col w-64 bg-secondary border-r border-border/60 p-6 flex-shrink-0">
-          <div className="mb-10">
+        <aside className="hidden lg:flex flex-col w-64 bg-secondary border-r border-border/60 p-6 flex-shrink-0 sticky top-[76px] h-[calc(100vh-76px)] self-start overflow-y-auto">
+          <div className="mb-8 shrink-0">
             <p className="eyebrow mb-2">Dashboard</p>
             <h1 className="font-serif text-xl text-foreground leading-tight">{vendor.storeName}</h1>
             <p className="text-xs text-muted-foreground mt-1">{vendor.description}</p>
           </div>
-          <nav className="space-y-1 flex-1">
+          <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -2237,7 +2237,7 @@ export default function VendorDashboard() {
               </button>
             ))}
           </nav>
-          <div className="pt-6 border-t border-border/60">
+          <div className="pt-6 mt-4 border-t border-border/60 shrink-0">
             <Link to="/" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
               ← Back to Store
             </Link>

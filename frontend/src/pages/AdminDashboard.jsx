@@ -3801,14 +3801,14 @@ const [newVendorForm, setNewVendorForm] = useState({
         </div>
 
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex flex-col w-64 min-h-screen bg-cream border-r border-border p-8 space-y-8 flex-shrink-0">
-          <div>
+        <aside className="hidden lg:flex flex-col w-64 bg-cream border-r border-border p-8 space-y-8 flex-shrink-0 sticky top-[76px] h-[calc(100vh-76px)] self-start overflow-y-auto">
+          <div className="shrink-0">
             <span className="text-xs uppercase tracking-[0.25em] text-muted-foreground font-serif">
               Admin Panel
             </span>
           </div>
 
-          <nav className="space-y-1 flex-1">
+          <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -3834,7 +3834,7 @@ const [newVendorForm, setNewVendorForm] = useState({
             ))}
           </nav>
 
-          <div className="pt-4 border-t border-border">
+          <div className="pt-4 border-t border-border shrink-0">
             <p className="text-xs text-muted-foreground">Signed in as</p>
             <p className="text-sm text-foreground font-serif truncate">
               {currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}` : currentUser?.email}
