@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone, Mail, Eye, EyeOff, ArrowRight, User, MapPin } from "lucide-react";
+import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone, Mail, Eye, EyeOff, ArrowRight, User, MapPin, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { parsePrice } from "@/data/products";
 import { useAuth } from "@/context/AuthContext";
@@ -16,7 +16,7 @@ function formatPrice(val) {
 export default function Checkout() {
   const { cartItems, cartSubtotal, cartTotal, placeOrder, coupon, discount, freeShipping } = useCart();
   const navigate = useNavigate();
-  const { isAuthenticated, requestPhoneLogin, currentUser, login, register } = useAuth();
+  const { isAuthenticated, requestPhoneLogin, currentUser, login, register, addAddress } = useAuth();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [authMode, setAuthMode] = useState("login");
@@ -51,6 +51,10 @@ export default function Checkout() {
   });
 
   const [selectedAddressId, setSelectedAddressId] = useState(null);
+  const [saveNewAddress, setSaveNewAddress] = useState(true);
+  const [newAddressLabel, setNewAddressLabel] = useState("");
+  const [newAddressIsDefault, setNewAddressIsDefault] = useState(false);
+  const [addressSavedNotice, setAddressSavedNotice] = useState(false);
 
   const applyAddressToShipping = useCallback((addr, user = currentUser) => {
     if (!addr) return;
@@ -68,6 +72,54 @@ export default function Checkout() {
     }));
   }, [currentUser]);
 
+  const handleAddressSelect = (addrId) => {
+    setSelectedAddressId(addrId);
+    if (addrId === "new") {
+      setShipping((prev) => ({
+        ...prev,
+        address: "",
+        city: "",
+        zip: "",
+      }));
+    } else {
+      const chosen = (currentUser?.addresses || []).find((a) => a.id === addrId);
+      if (chosen) applyAddressToShipping(chosen);
+    }
+  };
+
+  const startNewAddress = () => {
+    setSelectedAddressId("new");
+    setShipping((prev) => ({
+      ...prev,
+      address: "",
+      city: "",
+      zip: "",
+    }));
+  };
+
+  const handleSaveNewAddressNow = async () => {
+    if (!shipping.address.trim() || !shipping.city.trim() || !shipping.zip.trim()) {
+      alert("Please fill in Address, City, and Postal Code first.");
+      return;
+    }
+    const label = newAddressLabel.trim() || `Address ${(currentUser?.addresses?.length || 0) + 1}`;
+    try {
+      await addAddress({
+        label,
+        street: shipping.address.trim(),
+        city: shipping.city.trim(),
+        zip: shipping.zip.trim(),
+        country: shipping.country || "France",
+        phone: shipping.phone || currentUser?.phone || "",
+        isDefault: newAddressIsDefault,
+      });
+      setAddressSavedNotice(true);
+      setTimeout(() => setAddressSavedNotice(false), 4000);
+    } catch (err) {
+      console.warn("Could not save address:", err);
+    }
+  };
+
   useEffect(() => {
     if (currentUser) {
       const addresses = currentUser.addresses || [];
@@ -75,6 +127,7 @@ export default function Checkout() {
       if (defaultAddr) {
         applyAddressToShipping(defaultAddr, currentUser);
       } else {
+        setSelectedAddressId("new");
         setShipping((previous) => ({
           ...previous,
           firstName: previous.firstName || currentUser.firstName || "",
@@ -273,8 +326,23 @@ export default function Checkout() {
     return Object.keys(e).length === 0;
   };
 
-  const goToPayment = () => {
+  const goToPayment = async () => {
     if (validateShipping()) {
+      if (currentUser && selectedAddressId === "new" && saveNewAddress && shipping.address.trim()) {
+        try {
+          await addAddress({
+            label: newAddressLabel.trim() || `Address ${(currentUser?.addresses?.length || 0) + 1}`,
+            street: shipping.address.trim(),
+            city: shipping.city.trim(),
+            zip: shipping.zip.trim(),
+            country: shipping.country || "France",
+            phone: shipping.phone || currentUser.phone || "",
+            isDefault: newAddressIsDefault,
+          });
+        } catch (_err) {
+          // Address save is non-blocking for checkout
+        }
+      }
       setErrors({});
       setStep(1);
     }
@@ -371,43 +439,50 @@ setErrors({});
                 <h2 className="font-serif text-2xl mb-2">Shipping Details</h2>
                 <p className="text-[11px] text-muted-foreground mb-6">Fill in all fields to continue</p>
 
-                {currentUser?.addresses?.length > 0 && (
+                {currentUser && (
                   <div className="mb-6 p-4 border border-border bg-secondary/30">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground flex items-center gap-1.5 font-medium">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground flex items-center gap-1.5 font-medium">
                         <MapPin className="w-3.5 h-3.5 text-foreground" />
-                        Saved Addresses
-                      </p>
-                      <span className="text-[10px] text-muted-foreground">Click to auto-fill</span>
+                        Select Delivery Address
+                      </label>
+                      <button
+                        type="button"
+                        onClick={startNewAddress}
+                        className="text-[10px] tracking-[0.18em] uppercase text-foreground hover:text-crimson font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        New Address
+                      </button>
                     </div>
-                    <div className="flex flex-wrap gap-2.5">
-                      {currentUser.addresses.map((addr) => {
-                        const isSelected = selectedAddressId === addr.id || (
-                          !selectedAddressId && addr.isDefault
-                        );
-                        return (
-                          <button
-                            key={addr.id}
-                            type="button"
-                            onClick={() => applyAddressToShipping(addr)}
-                            className={`text-left px-3.5 py-2.5 border transition-all text-xs flex items-center gap-2 ${
-                              isSelected
-                                ? "border-foreground bg-foreground text-background shadow-xs"
-                                : "border-border bg-background hover:border-foreground/60 text-foreground"
-                            }`}
-                          >
-                            <span className="font-medium tracking-wide uppercase text-[10px]">{addr.label || "Address"}</span>
-                            {addr.isDefault && (
-                              <span className={`text-[9px] px-1.5 py-0.5 uppercase tracking-wider ${isSelected ? "bg-background text-foreground" : "bg-secondary text-muted-foreground"}`}>
-                                Default
-                              </span>
-                            )}
-                            <span className="text-[11px] opacity-75 truncate max-w-[160px]">
-                              {addr.street || addr.address1}, {addr.city}
-                            </span>
-                          </button>
-                        );
-                      })}
+
+                    <div className="relative">
+                      <select
+                        value={selectedAddressId || "new"}
+                        onChange={(e) => handleAddressSelect(e.target.value)}
+                        className="w-full bg-background border border-border px-3.5 py-2.5 text-xs tracking-wide uppercase text-foreground focus:outline-none focus:border-foreground transition-colors appearance-none cursor-pointer pr-10"
+                      >
+                        {(currentUser.addresses || []).map((addr) => (
+                          <option key={addr.id} value={addr.id}>
+                            {addr.label || "Address"} {addr.isDefault ? "• [DEFAULT]" : ""} — {addr.street || addr.address1}, {addr.city} ({addr.zip})
+                          </option>
+                        ))}
+                        <option value="new">+ Enter A New Address</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>
+                        {selectedAddressId === "new" ? (
+                          <span className="text-crimson font-medium">Entering new delivery address below</span>
+                        ) : (
+                          <span>Using: <strong className="text-foreground">{(currentUser.addresses || []).find((a) => a.id === selectedAddressId)?.label || "Saved Address"}</strong></span>
+                        )}
+                      </span>
+                      {selectedAddressId !== "new" && (
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Auto-filled</span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -448,6 +523,69 @@ setErrors({});
                     <input type="text" value={shipping.zip} onChange={(e) => setShipping({ ...shipping, zip: e.target.value })} className={inputClass("zip")} />
                     {errors.zip && <p className="text-[10px] text-crimson mt-1">{errors.zip}</p>}
                   </div>
+
+                  {currentUser && selectedAddressId === "new" && (
+                    <div className="sm:col-span-2 p-4 border border-border bg-background space-y-3 mt-1">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="saveNewAddress"
+                            checked={saveNewAddress}
+                            onChange={(e) => setSaveNewAddress(e.target.checked)}
+                            className="accent-foreground w-4 h-4 cursor-pointer"
+                          />
+                          <label htmlFor="saveNewAddress" className="text-xs font-medium text-foreground cursor-pointer select-none">
+                            Save this address to my account
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSaveNewAddressNow}
+                          className="text-[10px] tracking-[0.2em] uppercase border border-border px-3 py-1.5 hover:border-foreground hover:bg-foreground hover:text-background transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Check className="w-3 h-3" />
+                          Save Address Now
+                        </button>
+                      </div>
+
+                      {addressSavedNotice && (
+                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Address successfully saved to your account!
+                        </div>
+                      )}
+
+                      {saveNewAddress && (
+                        <div className="flex flex-wrap items-center gap-4 pt-1">
+                          <div className="flex-1 min-w-[200px]">
+                            <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1 block">
+                              Address Label (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={newAddressLabel}
+                              onChange={(e) => setNewAddressLabel(e.target.value)}
+                              placeholder="e.g. Home, Office, Parisian Flat"
+                              className="w-full bg-transparent border border-border px-3 py-1.5 text-xs focus:outline-none focus:border-foreground transition-colors"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 pt-4">
+                            <input
+                              type="checkbox"
+                              id="newAddressIsDefault"
+                              checked={newAddressIsDefault}
+                              onChange={(e) => setNewAddressIsDefault(e.target.checked)}
+                              className="accent-foreground w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <label htmlFor="newAddressIsDefault" className="text-xs text-muted-foreground cursor-pointer select-none">
+                              Set as default address
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {Object.keys(errors).length > 0 && (
                   <div className="flex items-center gap-2 mt-4 text-[11px] text-crimson"><AlertCircle className="w-3.5 h-3.5" /> Please fill in all required fields</div>
