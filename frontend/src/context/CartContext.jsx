@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { useOrders } from "@/context/OrderContext";
 import { useAuth } from "@/context/AuthContext";
 import { ordersApi } from "@/api/orders";
@@ -60,6 +60,31 @@ export function CartProvider({ children }) {
   const [order, setOrder] = useState(() => loadState("ef_order", null));
   const [coupon, setCoupon] = useState(() => loadState("ef_coupon", null));
   const [couponError, setCouponError] = useState("");
+
+  const prevUserRef = useRef(currentUser?.id || null);
+
+  useEffect(() => {
+    // When a logged-in user logs out (or account changes), clear the cart, wishlist, and coupon
+    if (prevUserRef.current && (!currentUser || currentUser.id !== prevUserRef.current)) {
+      setCartItems([]);
+      setWishlist([]);
+      setCoupon(null);
+      localStorage.removeItem("ef_cart");
+      localStorage.removeItem("ef_wishlist");
+      localStorage.removeItem("ef_coupon");
+    }
+    prevUserRef.current = currentUser?.id || null;
+  }, [currentUser]);
+
+  const clearCart = useCallback(() => {
+    setCartItems([]);
+    localStorage.removeItem("ef_cart");
+  }, []);
+
+  const clearWishlist = useCallback(() => {
+    setWishlist([]);
+    localStorage.removeItem("ef_wishlist");
+  }, []);
 
   useEffect(() => {
     // Uploaded product images are base64 strings and can exceed localStorage's
@@ -263,6 +288,8 @@ export function CartProvider({ children }) {
         removeCoupon,
         discount,
         freeShipping,
+        clearCart,
+        clearWishlist,
       }}
     >
       {children}

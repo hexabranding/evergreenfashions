@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone, Mail, Eye, EyeOff, ArrowRight, User } from "lucide-react";
+import { CreditCard, Lock, ArrowLeft, Check, AlertCircle, Smartphone, Mail, Eye, EyeOff, ArrowRight, User, MapPin } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { parsePrice } from "@/data/products";
 import { useAuth } from "@/context/AuthContext";
@@ -50,7 +50,41 @@ export default function Checkout() {
     upiId: "",
   });
 
-  useEffect(() => { if (currentUser) setShipping((previous) => ({ ...previous, firstName: previous.firstName || currentUser.firstName || "", lastName: previous.lastName || currentUser.lastName || "", email: previous.email || currentUser.email || "", phone: previous.phone || currentUser.phone || "" })); }, [currentUser]);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+
+  const applyAddressToShipping = useCallback((addr, user = currentUser) => {
+    if (!addr) return;
+    setSelectedAddressId(addr.id || null);
+    setShipping((prev) => ({
+      ...prev,
+      firstName: prev.firstName || user?.firstName || addr.firstName || "",
+      lastName: prev.lastName || user?.lastName || addr.lastName || "",
+      email: prev.email || user?.email || "",
+      phone: addr.phone || prev.phone || user?.phone || "",
+      address: addr.street || addr.address1 || prev.address || "",
+      city: addr.city || prev.city || "",
+      zip: addr.zip || prev.zip || "",
+      country: addr.country || prev.country || "France",
+    }));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const addresses = currentUser.addresses || [];
+      const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
+      if (defaultAddr) {
+        applyAddressToShipping(defaultAddr, currentUser);
+      } else {
+        setShipping((previous) => ({
+          ...previous,
+          firstName: previous.firstName || currentUser.firstName || "",
+          lastName: previous.lastName || currentUser.lastName || "",
+          email: previous.email || currentUser.email || "",
+          phone: previous.phone || currentUser.phone || "",
+        }));
+      }
+    }
+  }, [currentUser, applyAddressToShipping]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -335,7 +369,49 @@ setErrors({});
             {step === 0 && (
               <motion.div key="shipping" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.35 }}>
                 <h2 className="font-serif text-2xl mb-2">Shipping Details</h2>
-                <p className="text-[11px] text-muted-foreground mb-8">Fill in all fields to continue</p>
+                <p className="text-[11px] text-muted-foreground mb-6">Fill in all fields to continue</p>
+
+                {currentUser?.addresses?.length > 0 && (
+                  <div className="mb-6 p-4 border border-border bg-secondary/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground flex items-center gap-1.5 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-foreground" />
+                        Saved Addresses
+                      </p>
+                      <span className="text-[10px] text-muted-foreground">Click to auto-fill</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2.5">
+                      {currentUser.addresses.map((addr) => {
+                        const isSelected = selectedAddressId === addr.id || (
+                          !selectedAddressId && addr.isDefault
+                        );
+                        return (
+                          <button
+                            key={addr.id}
+                            type="button"
+                            onClick={() => applyAddressToShipping(addr)}
+                            className={`text-left px-3.5 py-2.5 border transition-all text-xs flex items-center gap-2 ${
+                              isSelected
+                                ? "border-foreground bg-foreground text-background shadow-xs"
+                                : "border-border bg-background hover:border-foreground/60 text-foreground"
+                            }`}
+                          >
+                            <span className="font-medium tracking-wide uppercase text-[10px]">{addr.label || "Address"}</span>
+                            {addr.isDefault && (
+                              <span className={`text-[9px] px-1.5 py-0.5 uppercase tracking-wider ${isSelected ? "bg-background text-foreground" : "bg-secondary text-muted-foreground"}`}>
+                                Default
+                              </span>
+                            )}
+                            <span className="text-[11px] opacity-75 truncate max-w-[160px]">
+                              {addr.street || addr.address1}, {addr.city}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid sm:grid-cols-2 gap-5">
                   <div>
                     <label className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 block">First Name <span className="text-crimson">*</span></label>

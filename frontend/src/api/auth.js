@@ -20,6 +20,7 @@ export const authApi = {
   getMe: () => api.get("/auth/me"),
   updateProfile: (data) => api.put("/auth/me", data),
   addAddress: (address) => api.post("/auth/me/addresses", address),
+  setDefaultAddress: (id) => api.put(`/auth/me/addresses/${id}/default`),
   removeAddress: (id) => api.delete(`/auth/me/addresses/${id}`),
   changePassword: (data) => api.put("/auth/change-password", data),
   deleteAccount: () => api.delete("/auth/account"),

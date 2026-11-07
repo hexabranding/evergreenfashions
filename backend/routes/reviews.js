@@ -6,6 +6,15 @@ import { authMiddleware, vendorOnly } from '../middleware/auth.js';
 
 const router = Router();
 
+router.get('/', async (req, res) => {
+  try {
+    const reviews = await Review.find().sort({ createdAt: -1 }).lean();
+    res.json(reviews);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/product/:productId', async (req, res) => {
   try {
     const reviews = await Review.find({ productId: req.params.productId }).sort({ createdAt: -1 }).lean();
@@ -47,7 +56,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-router.put('/:id/reply', vendorOnly, async (req, res) => {
+router.put('/:id/reply', authMiddleware, vendorOnly, async (req, res) => {
   try {
     const review = await Review.findById(req.params.id);
     if (!review) {

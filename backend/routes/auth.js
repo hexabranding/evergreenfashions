@@ -141,7 +141,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 
 router.put('/me', authMiddleware, async (req, res) => {
   try {
-    const { firstName, lastName, phone, vendorStore } = req.body;
+    const { firstName, lastName, phone, vendorStore, addresses } = req.body;
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -150,6 +150,7 @@ router.put('/me', authMiddleware, async (req, res) => {
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (phone !== undefined) user.phone = phone;
+    if (Array.isArray(addresses)) user.addresses = addresses;
     if (vendorStore && user.role === 'vendor') {
       user.vendorStore = {
         ...user.vendorStore?.toObject?.(),
@@ -174,11 +175,62 @@ router.post('/me/addresses', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const newAddress = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), ...req.body };
-    user.addresses.push(newAddress);
-    await user.save();
+    const { id, label, street, address1, address2, city, state, zip, country, phone, isDefault } = req.body;
+    const finalStreet = street || address1 || '';
+    const addressId = id || `addr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    
+    // If setting as default or if this is the user's first address, make it default
+    const makeDefault = isDefault || user.addresses.length === 0;
+    if (makeDefault) {
+      user.addresses.forEach((a) => { a.isDefault = false; });
+    }
 
-    res.status(201).json(newAddress);
+    const existingIdx = id ? user.addresses.findIndex((a) => a.id === id) : -1;
+    const addressObj = {
+      id: addressId,
+      label: label || 'Home',
+      street: finalStreet,
+      address1: finalStreet,
+      address2: address2 || '',
+      city: city || '',
+      state: state || '',
+      zip: zip || '',
+      country: country || 'France',
+      phone: phone || user.phone || '',
+      isDefault: !!makeDefault,
+    };
+
+    if (existingIdx !== -1) {
+      user.addresses[existingIdx] = addressObj;
+    } else {
+      user.addresses.push(addressObj);
+    }
+
+    await user.save();
+    res.status(201).json({ address: addressObj, addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/me/addresses/:id/default', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const target = user.addresses.find((a) => a.id === req.params.id);
+    if (!target) {
+      return res.status(404).json({ error: 'Address not found' });
+    }
+
+    user.addresses.forEach((a) => {
+      a.isDefault = a.id === req.params.id;
+    });
+
+    await user.save();
+    res.json({ message: 'Default address updated', addresses: user.addresses });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -196,9 +248,14 @@ router.delete('/me/addresses/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Address not found' });
     }
 
+    const wasDefault = user.addresses[idx].isDefault;
     user.addresses.splice(idx, 1);
+    if (wasDefault && user.addresses.length > 0) {
+      user.addresses[0].isDefault = true;
+    }
+
     await user.save();
-    res.json({ message: 'Address removed' });
+    res.json({ message: 'Address removed', addresses: user.addresses });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

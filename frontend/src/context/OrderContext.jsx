@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { allProducts } from "@/data/products";
 import { ordersApi } from "@/api/orders";
+import { reviewsApi } from "@/api/reviews";
 import { isOfflineError } from "@/lib/utils";
 
 const OrderContext = createContext();
@@ -236,6 +237,31 @@ export function OrdersProvider({ children }) {
   useEffect(() => {
     try { localStorage.setItem("ef_reviews", JSON.stringify(reviews)); } catch (_e) { /* quota exceeded */ }
   }, [reviews]);
+
+  useEffect(() => {
+    reviewsApi.getAll()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map((r) => ({
+            ...r,
+            id: r._id || r.id,
+            date: r.createdAt || r.date,
+          }));
+          setReviews((prev) => {
+            const ids = new Set(prev.map((p) => p.id));
+            const merged = [...prev];
+            for (const item of mapped) {
+              if (!ids.has(item.id)) {
+                merged.unshift(item);
+                ids.add(item.id);
+              }
+            }
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const getStock = useCallback(
     (productId, size) => {
@@ -649,9 +675,10 @@ const placeOrder = useCallback(
     );
   }, []);
 
-  const addReview = useCallback((productId, userId, userName, rating, comment) => {
+  const addReview = useCallback(async (productId, userId, userName, rating, comment) => {
+    const tempId = `review-${Date.now()}`;
     const newReview = {
-      id: `review-${Date.now()}`,
+      id: tempId,
       productId,
       userId,
       userName,
@@ -660,7 +687,17 @@ const placeOrder = useCallback(
       date: new Date().toISOString(),
       vendorReply: null,
     };
-    setReviews((prev) => [...prev, newReview]);
+    setReviews((prev) => [newReview, ...prev]);
+
+    try {
+      const saved = await reviewsApi.add({ productId, rating: newReview.rating, comment });
+      if (saved) {
+        const mapped = { ...saved, id: saved._id || saved.id, date: saved.createdAt || saved.date };
+        setReviews((prev) => prev.map((r) => (r.id === tempId ? mapped : r)));
+      }
+    } catch (err) {
+      console.warn("Could not persist review to backend:", err);
+    }
     return newReview;
   }, []);
 
@@ -681,13 +718,18 @@ const placeOrder = useCallback(
     [reviews]
   );
 
-  const replyToReview = useCallback((reviewId, reply) => {
+  const replyToReview = useCallback(async (reviewId, reply) => {
     setReviews((prev) =>
       prev.map((r) => {
         if (r.id !== reviewId) return r;
         return { ...r, vendorReply: reply };
       })
     );
+    try {
+      await reviewsApi.reply(reviewId, reply);
+    } catch (err) {
+      console.warn("Could not save vendor reply to backend:", err);
+    }
   }, []);
 
   const fetchVendorOrders = useCallback(async () => {

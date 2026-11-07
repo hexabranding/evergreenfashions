@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { authApi } from "@/api/auth";
+import { getToken } from "@/api/client";
 import { isOfflineError } from "@/lib/utils";
 import PhoneOtpDialog from "@/components/PhoneOtpDialog";
 
@@ -112,6 +113,19 @@ export function AuthProvider({ children }) {
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    if (getToken()) {
+      authApi.getMe()
+        .then((me) => {
+          if (me) {
+            const apiUser = { ...me, id: me._id || me.id };
+            setCurrentUser(apiUser);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   const register = useCallback(
     async ({ firstName, lastName, email, password, role = "customer", vendorStore }) => {
       let result;
@@ -192,72 +206,97 @@ export function AuthProvider({ children }) {
 
 
   const updateProfile = useCallback(
-    (updates) => {
+    async (updates) => {
       setCurrentUser((prev) => {
         if (!prev) return null;
-        const updated = { ...prev, ...updates };
-        setUsers((uPrev) =>
-          uPrev.map((u) =>
-            u.id === prev.id ? { ...u, ...updates } : u
-          )
-        );
-        return updated;
+        return { ...prev, ...updates };
       });
+      setUsers((uPrev) =>
+        uPrev.map((u) => (u.id === currentUser?.id ? { ...u, ...updates } : u))
+      );
+      try {
+        const res = await authApi.updateProfile(updates);
+        const apiUser = { ...res, id: res._id || res.id };
+        setCurrentUser(apiUser);
+        return { success: true, user: apiUser };
+      } catch (err) {
+        console.warn("Could not save profile to backend:", err);
+        return { success: false, error: err.message };
+      }
     },
-    []
+    [currentUser?.id]
   );
 
   const addAddress = useCallback(
-    (address) => {
+    async (address) => {
+      const addressId = address.id || `addr-${Date.now().toString(36)}`;
       const newAddress = {
         ...address,
-        id: address.id || `addr-${Date.now().toString(36)}`,
+        id: addressId,
+        street: address.street || address.address1 || "",
       };
 
       setCurrentUser((prev) => {
         if (!prev) return null;
-        const addresses = prev.addresses.map((a) =>
-          newAddress.isDefault ? { ...a, isDefault: false } : a
-        );
-        const updated = { ...prev, addresses: [...addresses, newAddress] };
-        setUsers((uPrev) =>
-          uPrev.map((u) => (u.id === prev.id ? { ...u, addresses: updated.addresses } : u))
-        );
-        return updated;
+        const existing = prev.addresses || [];
+        const isEdit = existing.some((a) => a.id === newAddress.id);
+        const updatedList = isEdit
+          ? existing.map((a) => (a.id === newAddress.id ? { ...a, ...newAddress } : (newAddress.isDefault ? { ...a, isDefault: false } : a)))
+          : [...existing.map((a) => (newAddress.isDefault ? { ...a, isDefault: false } : a)), newAddress];
+        return { ...prev, addresses: updatedList };
       });
+
+      try {
+        const res = await authApi.addAddress(newAddress);
+        if (res?.addresses) {
+          setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+        }
+      } catch (err) {
+        console.warn("Could not save address to backend:", err);
+      }
     },
     []
   );
 
   const removeAddress = useCallback(
-    (addressId) => {
+    async (addressId) => {
       setCurrentUser((prev) => {
         if (!prev) return null;
-        const addresses = prev.addresses.filter((a) => a.id !== addressId);
-        const updated = { ...prev, addresses };
-        setUsers((uPrev) =>
-          uPrev.map((u) => (u.id === prev.id ? { ...u, addresses } : u))
-        );
-        return updated;
+        const addresses = (prev.addresses || []).filter((a) => a.id !== addressId);
+        return { ...prev, addresses };
       });
+
+      try {
+        const res = await authApi.removeAddress(addressId);
+        if (res?.addresses) {
+          setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+        }
+      } catch (err) {
+        console.warn("Could not remove address from backend:", err);
+      }
     },
     []
   );
 
   const setDefaultAddress = useCallback(
-    (addressId) => {
+    async (addressId) => {
       setCurrentUser((prev) => {
         if (!prev) return null;
-        const addresses = prev.addresses.map((a) => ({
+        const addresses = (prev.addresses || []).map((a) => ({
           ...a,
           isDefault: a.id === addressId,
         }));
-        const updated = { ...prev, addresses };
-        setUsers((uPrev) =>
-          uPrev.map((u) => (u.id === prev.id ? { ...u, addresses } : u))
-        );
-        return updated;
+        return { ...prev, addresses };
       });
+
+      try {
+        const res = await authApi.setDefaultAddress(addressId);
+        if (res?.addresses) {
+          setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+        }
+      } catch (err) {
+        console.warn("Could not set default address on backend:", err);
+      }
     },
     []
   );

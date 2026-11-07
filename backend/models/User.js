@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const addressSchema = new mongoose.Schema({
   id: String,
   label: String,
+  street: String,
   firstName: String,
   lastName: String,
   address1: String,
@@ -10,8 +11,9 @@ const addressSchema = new mongoose.Schema({
   city: String,
   state: String,
   zip: String,
-  country: String,
+  country: { type: String, default: 'France' },
   phone: String,
+  isDefault: { type: Boolean, default: false },
 }, { _id: false });
 
 const vendorStoreSchema = new mongoose.Schema({
