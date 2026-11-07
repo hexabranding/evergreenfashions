@@ -1567,39 +1567,43 @@ export default function VendorDashboard() {
 
                             {/* Rental Return Roadmap - 10 Step Lifecycle */}
                             <div className="bg-background rounded-sm p-4 mb-4 border border-border">
-                              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Return Roadmap</p>
-                              <div className="flex items-center gap-0 overflow-x-auto pb-2">
-                                {rentalStatusSteps.map((step, idx) => {
-                                  const isCompleted = idx <= currentRentalStep;
-                                  const isCurrent = idx === currentRentalStep;
-                                  return (
-                                    <div key={step.id} className="flex-1 min-w-[70px] flex items-center">
-                                      <div className="flex flex-col items-center flex-shrink-0">
+                              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-4">Return Roadmap</p>
+                              <div className="overflow-x-auto pb-2">
+                                <div className="flex items-start min-w-[720px] relative">
+                                  {rentalStatusSteps.map((step, idx) => {
+                                    const isCompleted = idx <= currentRentalStep;
+                                    const isCurrent = idx === currentRentalStep;
+                                    return (
+                                      <div key={step.id} className="relative flex-1 flex flex-col items-center text-center">
+                                        {idx < rentalStatusSteps.length - 1 && (
+                                          <div
+                                            className={`absolute top-3.5 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
+                                              idx < currentRentalStep ? "bg-ink" : "bg-border"
+                                            }`}
+                                          />
+                                        )}
                                         <div
-                                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors ${
+                                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-background ${
                                             isCompleted
                                               ? "bg-ink text-cream"
                                               : isCurrent
                                               ? "bg-ink/20 text-ink border-2 border-ink"
-                                              : "bg-border text-muted-foreground"
+                                              : "bg-secondary text-muted-foreground border border-border"
                                           }`}
                                         >
-                                          {isCompleted ? <Check className="w-3 h-3" /> : step.icon}
+                                          {isCompleted ? <Check className="w-3.5 h-3.5" /> : step.icon}
                                         </div>
-                                        <span className={`text-[9px] mt-1 text-center leading-tight hidden sm:block ${isCurrent ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                                        <span
+                                          className={`text-[9px] mt-2 text-center leading-tight line-clamp-2 max-w-[68px] ${
+                                            isCurrent ? "text-foreground font-semibold" : "text-muted-foreground"
+                                          }`}
+                                        >
                                           {step.label}
                                         </span>
                                       </div>
-                                      {idx < rentalStatusSteps.length - 1 && (
-                                        <div
-                                          className={`flex-1 h-px mx-0.5 ${
-                                            idx < currentRentalStep ? "bg-ink" : "bg-border"
-                                          }`}
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
 
