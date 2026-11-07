@@ -515,7 +515,7 @@ export default function Rental() {
 
       {/* Trust Badges */}
       <section className="border-y border-border bg-secondary/40">
-        <div className="max-w-[1600px] mx-auto px-6 lg:px-20 py-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="max-w-[1600px] mx-auto px-6 lg:px-12 py-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6">
           {trustBadges.map((badge, i) => (
             <motion.div
               key={badge.label}
@@ -523,7 +523,7 @@ export default function Rental() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="flex items-start gap-4"
+              className="flex items-center justify-start sm:justify-center gap-4 text-left"
             >
               <span className="w-9 h-9 shrink-0 grid place-items-center bg-background border border-border text-crimson">
                 <badge.icon className="w-4 h-4" />

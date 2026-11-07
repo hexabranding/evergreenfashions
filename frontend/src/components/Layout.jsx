@@ -276,12 +276,12 @@ export default function Layout() {
 
       {/* Trust badges */}
       <section className="border-t border-border bg-secondary/30">
-        <div className="max-w-[1600px] mx-auto px-8 py-10 grid grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="max-w-[1600px] mx-auto px-6 lg:px-12 py-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6">
           {trustBadges.map((badge) => (
-            <div key={badge.label} className="flex items-start gap-4">
-              <badge.icon className="w-5 h-5 mt-0.5 text-crimson shrink-0" />
+            <div key={badge.label} className="flex items-center justify-start sm:justify-center gap-4 text-left">
+              <badge.icon className="w-5 h-5 text-crimson shrink-0" />
               <div>
-                <div className="text-xs font-medium tracking-wide uppercase">{badge.label}</div>
+                <div className="text-xs font-medium tracking-wide uppercase text-foreground">{badge.label}</div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">{badge.sub}</div>
               </div>
             </div>
