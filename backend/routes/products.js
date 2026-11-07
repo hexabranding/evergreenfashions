@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import Product from '../models/Product.js';
-import { authMiddleware, optionalAuth, vendorOnly } from '../middleware/auth.js';
+import { authMiddleware, optionalAuth, vendorOnly, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -21,6 +21,18 @@ router.get('/', optionalAuth, async (req, res) => {
       if (req.query.minPrice) filter.price.$gte = Number(req.query.minPrice);
       if (req.query.maxPrice) filter.price.$lte = Number(req.query.maxPrice);
     }
+
+    // Approval status filtering:
+    if (req.query.approvalStatus) {
+      filter.approvalStatus = req.query.approvalStatus;
+    } else if (!req.user || req.user.role === 'customer') {
+      // Public / customer can only see approved products
+      filter.approvalStatus = 'approved';
+    } else if (req.user.role === 'vendor' && req.query.vendorId !== req.user.id) {
+      // Vendors browsing the public catalogue only see approved products
+      filter.approvalStatus = 'approved';
+    }
+    // Admins and vendors viewing their own store can see all statuses when not explicitly filtered
 
     const products = await Product.find(filter).lean();
     res.json(products);
@@ -60,6 +72,9 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
       ? requestedInventory
       : (sizes || []).map((size) => ({ size, stock: 10 }));
 
+    const isVendor = req.user.role === 'vendor';
+    const approvalStatus = isVendor ? 'pending' : (req.body.approvalStatus || 'approved');
+
     const product = await Product.create({
       _id: id, name, price, tag: category || '', category: category || '', gender: gender || 'Unisex',
       colors: colors || [], sizes: sizes || [], description: description || '',
@@ -71,6 +86,7 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
       rentalPricePerDay: rentalPricePerDay || 0,
       rentalDeposit: rentalDeposit || 100,
       inventory,
+      approvalStatus,
     });
 
     res.status(201).json(product.toObject());
@@ -103,6 +119,30 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
     if (rentalDeposit !== undefined) product.rentalDeposit = rentalDeposit;
     if (vendorId !== undefined) product.vendorId = vendorId;
     if (inventory !== undefined) product.inventory = inventory;
+
+    await product.save();
+    res.json(product.toObject());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/:id/approval', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const { status, reason } = req.body;
+    if (!['approved', 'rejected', 'pending'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid approval status. Must be approved, rejected, or pending.' });
+    }
+
+    product.approvalStatus = status;
+    if (reason !== undefined) product.approvalReason = reason;
+    product.approvedBy = req.user.id;
+    product.approvedAt = new Date().toISOString();
 
     await product.save();
     res.json(product.toObject());

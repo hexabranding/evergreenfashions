@@ -382,6 +382,9 @@ const [newVendorForm, setNewVendorForm] = useState({
 
   const [productSearch, setProductSearch] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
+  const [productSubTab, setProductSubTab] = useState("approved");
+  const [rejectingProduct, setRejectingProduct] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
   const [editingProduct, setEditingProduct] = useState(null);
   const addFormRef = useRef(null);
   const [editProductForm, setEditProductForm] = useState({ name: "", category: "", price: 0, vendor: "" });
@@ -551,7 +554,16 @@ const [newVendorForm, setNewVendorForm] = useState({
     return matchesSearch && matchesFilter;
   });
 
+  const liveProducts = products.filter((p) => (p.approvalStatus || "approved") === "approved");
+  const pendingProducts = products.filter((p) => p.approvalStatus === "pending");
+  const rejectedProducts = products.filter((p) => p.approvalStatus === "rejected");
+
   const filteredAllProducts = products.filter((p) => {
+    const status = p.approvalStatus || "approved";
+    if (productSubTab === "approved" && status !== "approved") return false;
+    if (productSubTab === "pending" && status !== "pending") return false;
+    if (productSubTab === "rejected" && status !== "rejected") return false;
+
     const matchesSearch =
       p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.vendor?.toLowerCase().includes(productSearch.toLowerCase());
@@ -988,6 +1000,47 @@ const [newVendorForm, setNewVendorForm] = useState({
     } catch (error) { alert(error.message || "Could not save product."); }
   };
 
+  const handleApproveProduct = async (productId) => {
+    try {
+      const updated = await productsApi.updateApproval(productId, { status: "approved" });
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId
+            ? { ...p, approvalStatus: "approved", approvedAt: updated?.approvedAt }
+            : p
+        )
+      );
+    } catch (error) {
+      alert(error.message || "Could not approve product.");
+    }
+  };
+
+  const handleRejectProduct = async () => {
+    if (!rejectingProduct) return;
+    try {
+      const updated = await productsApi.updateApproval(rejectingProduct.id, {
+        status: "rejected",
+        reason: rejectionReason,
+      });
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === rejectingProduct.id
+            ? {
+                ...p,
+                approvalStatus: "rejected",
+                approvalReason: rejectionReason,
+                approvedAt: updated?.approvedAt,
+              }
+            : p
+        )
+      );
+      setRejectingProduct(null);
+      setRejectionReason("");
+    } catch (error) {
+      alert(error.message || "Could not reject product.");
+    }
+  };
+
   const handleExport = () => {
     setExporting(true);
     const header = "Month,Revenue,Orders,Users,Vendors\n";
@@ -1017,6 +1070,34 @@ const [newVendorForm, setNewVendorForm] = useState({
           <StatCard icon={Repeat} label="Active Rentals" value={rentalProducts.filter((r) => r.activeRentals > 0).length} index={6} />
           <StatCard icon={Megaphone} label="Active Ads" value={adStats.active} index={7} />
         </div>
+
+        {pendingProducts.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 p-4 rounded-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-amber-900">
+                  {pendingProducts.length} Vendor Product{pendingProducts.length !== 1 ? "s" : ""} Pending Verification
+                </p>
+                <p className="text-xs text-amber-700">
+                  New vendor submissions require admin review before becoming visible in the store.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setActiveTab("products");
+                setProductSubTab("pending");
+              }}
+              className="btn-ink px-4 py-2 text-xs tracking-wider uppercase flex items-center gap-2 whitespace-nowrap self-end sm:self-auto"
+            >
+              Verify Products
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="bg-cream border border-border p-6">
           <div className="flex items-center justify-between mb-6">
@@ -1834,14 +1915,67 @@ const [newVendorForm, setNewVendorForm] = useState({
   const renderProducts = () => {
     return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Package} label="Total Products" value={products.length} index={0} />
-        <StatCard icon={Store} label="With Images" value={products.filter((p) => p.images?.length > 0).length} index={1} />
-        <StatCard icon={CheckCircle} label="Categories" value={uniqueCategories.length} index={2} />
+        <StatCard icon={CheckCircle} label="Live / Approved" value={liveProducts.length} index={1} />
+        <StatCard icon={Clock} label="Pending Approval" value={pendingProducts.length} index={2} />
+        <StatCard icon={Store} label="Categories" value={uniqueCategories.length} index={3} />
+      </div>
+
+      {/* Sub Tabs: Live vs Pending Verification vs Rejected */}
+      <div className="flex border-b border-border gap-2">
+        <button
+          onClick={() => setProductSubTab("approved")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            productSubTab === "approved"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <CheckCircle size={14} className={productSubTab === "approved" ? "text-emerald-600" : ""} />
+          Live Products
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-foreground">
+            {liveProducts.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setProductSubTab("pending")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors relative ${
+            productSubTab === "pending"
+              ? "border-amber-600 text-amber-900 font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Clock size={14} className={productSubTab === "pending" ? "text-amber-600" : ""} />
+          Verification / Approval
+          {pendingProducts.length > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-300">
+              {pendingProducts.length} pending
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setProductSubTab("rejected")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            productSubTab === "rejected"
+              ? "border-crimson text-crimson font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <X size={14} className={productSubTab === "rejected" ? "text-crimson" : ""} />
+          Rejected
+          {rejectedProducts.length > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+              {rejectedProducts.length}
+            </span>
+          )}
+        </button>
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{filteredAllProducts.length} product{filteredAllProducts.length !== 1 ? "s" : ""} found</p>
+        <p className="text-sm text-muted-foreground">
+          {filteredAllProducts.length} {productSubTab === "pending" ? "pending" : productSubTab === "rejected" ? "rejected" : "live"} product{filteredAllProducts.length !== 1 ? "s" : ""} found
+        </p>
         <button
           onClick={() => {
             const opening = !showAddForm;
@@ -1899,7 +2033,7 @@ const [newVendorForm, setNewVendorForm] = useState({
           <div className="col-span-2">Category</div>
           <div className="col-span-1">Price</div>
           <div className="col-span-2">Vendor</div>
-          <div className="col-span-1">Stock</div>
+          <div className="col-span-1">Status</div>
           <div className="col-span-2">Actions</div>
         </div>
         <div className="divide-y divide-border">
@@ -1922,46 +2056,156 @@ const [newVendorForm, setNewVendorForm] = useState({
                     )}
                   </div>
                 </div>
-                <div className="md:col-span-3 text-sm font-serif text-foreground truncate">{p.name}</div>
+                <div className="md:col-span-3">
+                  <p className="text-sm font-serif text-foreground truncate font-medium">{p.name}</p>
+                  {p.rentalAvailable && (
+                    <span className="text-[10px] text-muted-foreground">Rental: ${parsePrice(p.rentalPricePerDay)}/day</span>
+                  )}
+                  {p.approvalStatus === "rejected" && p.approvalReason && (
+                    <p className="text-[11px] text-red-600 truncate mt-0.5" title={p.approvalReason}>
+                      Reason: {p.approvalReason}
+                    </p>
+                  )}
+                </div>
                 <div className="md:col-span-2 text-sm text-muted-foreground">{p.category || "N/A"}</div>
                 <div className="md:col-span-1 text-sm text-foreground font-serif">${parsePrice(p.price)}</div>
                 <div className="md:col-span-2 text-sm text-muted-foreground truncate">{p.vendor || "N/A"}</div>
                 <div className="md:col-span-1">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.stock > 0 || p.stock === undefined ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                    {p.stock > 0 || p.stock === undefined ? "In Stock" : "Out"}
-                  </span>
+                  {p.approvalStatus === "pending" ? (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                      Pending
+                    </span>
+                  ) : p.approvalStatus === "rejected" ? (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-800 border border-red-300">
+                      Rejected
+                    </span>
+                  ) : (
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${p.stock > 0 || p.stock === undefined ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
+                      {p.stock > 0 || p.stock === undefined ? "Approved" : "Out"}
+                    </span>
+                  )}
                 </div>
-                <div className="md:col-span-2 flex items-center gap-1">
-                  <button
-                    onClick={() => setPreviewProduct(p)}
-                    className="p-2 hover:bg-ink/5 rounded transition-colors"
-                    title="Preview"
-                  >
-                    <Eye className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                  <button
-                    onClick={() => startEditProduct(p)}
-                    className="p-2 hover:bg-ink/5 rounded transition-colors"
-                    title="Edit"
-                  >
-                    <Edit2 className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                  <button
-                    onClick={() => deleteProduct(p.id)}
-                    className="p-2 hover:bg-crimson/10 rounded transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4 text-crimson" />
-                  </button>
+                <div className="md:col-span-2 flex items-center gap-1.5 flex-wrap">
+                  {p.approvalStatus === "pending" ? (
+                    <>
+                      <button
+                        onClick={() => handleApproveProduct(p.id)}
+                        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] uppercase tracking-wider flex items-center gap-1 rounded-sm shadow-sm transition-colors"
+                        title="Approve & Publish to Store"
+                      >
+                        <Check size={12} /> Approve
+                      </button>
+                      <button
+                        onClick={() => { setRejectingProduct(p); setRejectionReason(""); }}
+                        className="px-2.5 py-1 border border-red-300 hover:bg-red-50 text-red-700 text-[11px] uppercase tracking-wider flex items-center gap-1 rounded-sm transition-colors"
+                        title="Reject Product"
+                      >
+                        <X size={12} /> Reject
+                      </button>
+                      <button
+                        onClick={() => setPreviewProduct(p)}
+                        className="p-1.5 hover:bg-ink/5 rounded transition-colors"
+                        title="Preview"
+                      >
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    </>
+                  ) : p.approvalStatus === "rejected" ? (
+                    <>
+                      <button
+                        onClick={() => handleApproveProduct(p.id)}
+                        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] uppercase tracking-wider flex items-center gap-1 rounded-sm transition-colors"
+                        title="Re-approve Product"
+                      >
+                        <Check size={12} /> Re-Approve
+                      </button>
+                      <button
+                        onClick={() => deleteProduct(p.id)}
+                        className="p-1.5 hover:bg-crimson/10 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-crimson" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setPreviewProduct(p)}
+                        className="p-1.5 hover:bg-ink/5 rounded transition-colors"
+                        title="Preview"
+                      >
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={() => startEditProduct(p)}
+                        className="p-1.5 hover:bg-ink/5 rounded transition-colors"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={() => deleteProduct(p.id)}
+                        className="p-1.5 hover:bg-crimson/10 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-crimson" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </motion.div>
             ))}
           </AnimatePresence>
           {filteredAllProducts.length === 0 && (
-            <EmptyState icon={Package} title="No products found" description="No products match your search criteria." />
+            <EmptyState
+              icon={productSubTab === "pending" ? Clock : Package}
+              title={productSubTab === "pending" ? "No products pending verification" : "No products found"}
+              description={productSubTab === "pending" ? "All submitted vendor products have been reviewed and approved." : "No products match your search criteria."}
+            />
           )}
         </div>
       </div>
+
+      {/* Reject Product Modal */}
+      <AnimatePresence>
+        {rejectingProduct && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setRejectingProduct(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-cream border border-border p-6 max-w-md w-full shadow-2xl rounded-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-serif text-lg text-foreground mb-1">Reject Product</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                You are rejecting <strong className="text-foreground">{rejectingProduct.name}</strong> submitted by {rejectingProduct.vendor || "vendor"}. Provide an optional feedback note so the vendor can rectify it:
+              </p>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="e.g. Photography does not meet luxury standards, or inventory details are missing."
+                rows={3}
+                className="w-full p-3 bg-secondary border border-border text-xs text-foreground focus:outline-none focus:border-ink mb-4 rounded-sm"
+              />
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => { setRejectingProduct(null); setRejectionReason(""); }}
+                  className="px-4 py-2 border border-border text-xs uppercase tracking-wider hover:bg-secondary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRejectProduct}
+                  className="px-4 py-2 bg-crimson hover:bg-crimson/90 text-white text-xs uppercase tracking-wider transition-colors"
+                >
+                  Confirm Rejection
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
 
       <AnimatePresence>
@@ -3546,6 +3790,11 @@ const [newVendorForm, setNewVendorForm] = useState({
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
+                {tab.id === "products" && pendingProducts.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500 text-white font-bold">
+                    {pendingProducts.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -3564,16 +3813,23 @@ const [newVendorForm, setNewVendorForm] = useState({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+                className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${
                   activeTab === tab.id
                     ? "btn-ink text-cream"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
-                <span className="font-serif uppercase tracking-wider text-xs">
-                  {tab.label}
-                </span>
+                <div className="flex items-center gap-3">
+                  <tab.icon className="w-4 h-4" />
+                  <span className="font-serif uppercase tracking-wider text-xs">
+                    {tab.label}
+                  </span>
+                </div>
+                {tab.id === "products" && pendingProducts.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-bold">
+                    {pendingProducts.length}
+                  </span>
+                )}
               </button>
             ))}
           </nav>

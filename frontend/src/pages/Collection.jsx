@@ -13,14 +13,16 @@ export default function Collection() {
   const { products } = useProducts();
   const [activeCategory, setActiveCategory] = useState("All");
 
+  const liveProducts = products.filter((p) => (p.approvalStatus || "approved") === "approved");
+
   const filtered =
     activeCategory === "All"
-      ? products
+      ? liveProducts
       : activeCategory === "Menswear"
-      ? products.filter((p) => p.gender === "Menswear")
+      ? liveProducts.filter((p) => p.gender === "Menswear")
       : activeCategory === "Womenswear"
-      ? products.filter((p) => p.gender === "Womenswear")
-      : products.filter((p) => p.category === activeCategory);
+      ? liveProducts.filter((p) => p.gender === "Womenswear")
+      : liveProducts.filter((p) => p.category === activeCategory);
 
   return (
     <section className="max-w-[1600px] mx-auto px-8 py-20">

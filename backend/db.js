@@ -49,6 +49,7 @@ export async function connectDB() {
     await seedData();
   } else {
     await Product.updateMany({ vendorId: 'ef-main' }, { $set: { vendorId: 'vendor-1' } });
+    await Product.updateMany({ $or: [{ approvalStatus: { $exists: false } }, { approvalStatus: null }] }, { $set: { approvalStatus: 'approved' } });
 
     const products = await Product.find().lean();
     for (const p of products) {
@@ -145,6 +146,7 @@ export async function seedData() {
       rentalAvailable: p.rentalAvailable || false,
       rentalPricePerDay: p.rentalPricePerDay || 0,
       inventory,
+      approvalStatus: 'approved',
     });
   }
 

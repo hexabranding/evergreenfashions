@@ -588,10 +588,18 @@ export default function VendorDashboard() {
       const saved = editingProduct
         ? await productsApi.update(editingProduct.id, payload)
         : await productsApi.create(payload);
-      const mapped = { ...saved, id: saved._id, stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])) };
+      const mapped = {
+        ...saved,
+        id: saved._id || saved.id,
+        stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])),
+        approvalStatus: saved.approvalStatus || (editingProduct ? editingProduct.approvalStatus : "pending"),
+      };
       setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
       setNewProductForm(false);
       setEditingProduct(null);
+      if (!editingProduct) {
+        alert("Product submitted successfully! It is now pending admin verification and will appear in the store once approved.");
+      }
     } catch (error) { alert(error.message || "Could not save product."); }
   };
 
@@ -841,10 +849,25 @@ export default function VendorDashboard() {
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
-                  <div className="absolute top-3 right-3">
+                  <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
                     <span className={`text-xs font-medium bg-background/90 backdrop-blur-sm px-2.5 py-1 rounded-full ${stockStatus.color}`}>
                       {stockStatus.label}
                     </span>
+                    {product.approvalStatus === "pending" && (
+                      <span className="text-[11px] font-medium bg-amber-100/95 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                        <Clock size={11} /> Pending Review
+                      </span>
+                    )}
+                    {product.approvalStatus === "rejected" && (
+                      <span className="text-[11px] font-medium bg-red-100/95 text-red-900 border border-red-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={product.approvalReason || "Rejected by admin"}>
+                        <AlertCircle size={11} /> Rejected
+                      </span>
+                    )}
+                    {(!product.approvalStatus || product.approvalStatus === "approved") && (
+                      <span className="text-[11px] font-medium bg-emerald-100/95 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                        <CheckCircle size={11} /> Live in Store
+                      </span>
+                    )}
                   </div>
                   {product.rentalAvailable && (
                     <div className="absolute top-3 left-3">
@@ -862,6 +885,12 @@ export default function VendorDashboard() {
                     </div>
                     <p className="text-display text-lg">{parsePrice(product.price)}</p>
                   </div>
+
+                  {product.approvalStatus === "rejected" && (
+                    <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                      <strong>Admin note:</strong> {product.approvalReason || "Product was rejected. Please review product details and resubmit."}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground mb-3 pt-3 border-t border-border/40">
                     <div>

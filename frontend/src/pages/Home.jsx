@@ -35,12 +35,14 @@ export default function Home() {
   const menCategories = ["All", "Dresses", "Apparel", "Shoes"];
   const womenCategories = ["All", "Dresses", "Apparel", "Shoes"];
 
+  const liveProducts = products.filter((p) => (p.approvalStatus || "approved") === "approved");
+
   const filteredMen = menCat === "All"
-    ? products.filter(p => p.gender === "Menswear")
-    : products.filter(p => p.gender === "Menswear" && p.category === menCat);
+    ? liveProducts.filter(p => p.gender === "Menswear")
+    : liveProducts.filter(p => p.gender === "Menswear" && p.category === menCat);
   const filteredWomen = womenCat === "All"
-    ? products.filter(p => p.gender === "Womenswear")
-    : products.filter(p => p.gender === "Womenswear" && p.category === womenCat);
+    ? liveProducts.filter(p => p.gender === "Womenswear")
+    : liveProducts.filter(p => p.gender === "Womenswear" && p.category === womenCat);
 
   useEffect(() => {
     const timer = setInterval(() => {

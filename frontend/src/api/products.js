@@ -11,4 +11,5 @@ export const productsApi = {
   delete: (id) => api.delete(`/products/${id}`),
   getStock: (id) => api.get(`/products/${id}/stock`),
   updateStock: (id, stock) => api.put(`/products/${id}/stock`, { stock }),
+  updateApproval: (id, { status, reason } = {}) => api.put(`/products/${id}/approval`, { status, reason }),
 };

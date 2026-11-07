@@ -325,7 +325,7 @@ export default function Rental() {
   const [activeCat, setActiveCat] = useState("All");
 
   const rentalProducts = useMemo(
-    () => (products || []).filter((p) => p.rentalAvailable),
+    () => (products || []).filter((p) => p.rentalAvailable && (p.approvalStatus || "approved") === "approved"),
     [products]
   );
 

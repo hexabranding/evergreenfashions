@@ -23,6 +23,10 @@ const productSchema = new mongoose.Schema({
   rentalPricePerDay: { type: Number, default: 0 },
   rentalDeposit: { type: Number, default: 100 },
   inventory: [inventorySchema],
+  approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
+  approvalReason: { type: String, default: '' },
+  approvedBy: { type: String, default: null },
+  approvedAt: { type: String, default: null },
 }, { timestamps: true });
 
 export default mongoose.model('Product', productSchema);
