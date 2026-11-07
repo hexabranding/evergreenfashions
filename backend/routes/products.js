@@ -28,11 +28,30 @@ router.get('/', optionalAuth, async (req, res) => {
     } else if (!req.user || req.user.role === 'customer') {
       // Public / customer can only see approved products
       filter.approvalStatus = 'approved';
-    } else if (req.user.role === 'vendor' && req.query.vendorId !== req.user.id) {
-      // Vendors browsing the public catalogue only see approved products
-      filter.approvalStatus = 'approved';
+    } else if (req.user.role === 'vendor') {
+      if (req.query.vendorId && req.query.vendorId !== req.user.id) {
+        // Vendor viewing another vendor's products: approved only
+        filter.approvalStatus = 'approved';
+      } else if (req.query.vendorId === req.user.id) {
+        // Vendor viewing strictly their own store: see all statuses (pending, approved, rejected)
+      } else {
+        // Vendor viewing catalogue: show all approved products PLUS the vendor's own products in any status
+        const visibilityFilter = {
+          $or: [
+            { approvalStatus: 'approved' },
+            { vendorId: req.user.id },
+          ],
+        };
+        if (filter.$or) {
+          const searchClause = { $or: filter.$or };
+          delete filter.$or;
+          filter.$and = [searchClause, visibilityFilter];
+        } else {
+          filter.$or = visibilityFilter.$or;
+        }
+      }
     }
-    // Admins and vendors viewing their own store can see all statuses when not explicitly filtered
+    // Admins can see all statuses when not explicitly filtered
 
     const products = await Product.find(filter).lean();
     res.json(products);
