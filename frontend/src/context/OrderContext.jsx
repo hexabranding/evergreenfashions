@@ -1,4 +1,16 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import {
+  Check,
+  Package,
+  Truck,
+  PackageCheck,
+  Shirt,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  Wallet,
+  Sparkles,
+} from "lucide-react";
 import { allProducts } from "@/data/products";
 import { ordersApi } from "@/api/orders";
 import { isOfflineError } from "@/lib/utils";
@@ -577,16 +589,16 @@ const placeOrder = useCallback(
   }, [restoreStock, updateOrderInAllStates]);
 
   const rentalStatusSteps = [
-    { id: "confirmed", label: "Confirmed", icon: "✓" },
-    { id: "preparing", label: "Preparing", icon: "📦" },
-    { id: "shipped", label: "Shipped", icon: "🚚" },
-    { id: "delivered", label: "Delivered", icon: "📬" },
-    { id: "active", label: "Rental Active", icon: "🏠" },
-    { id: "pending_return", label: "Return Requested", icon: "↩️" },
-    { id: "awaiting_inspection", label: "Awaiting Inspection", icon: "🔍" },
-    { id: "inspected", label: "Inspected", icon: "✅" },
-    { id: "deposit_refunded", label: "Deposit Refunded", icon: "💰" },
-    { id: "completed", label: "Completed", icon: "🎉" },
+    { id: "confirmed", label: "Confirmed", icon: Check },
+    { id: "preparing", label: "Preparing", icon: Package },
+    { id: "shipped", label: "Shipped", icon: Truck },
+    { id: "delivered", label: "Delivered", icon: PackageCheck },
+    { id: "active", label: "Rental Active", icon: Shirt },
+    { id: "pending_return", label: "Return Requested", icon: RotateCcw },
+    { id: "awaiting_inspection", label: "Awaiting Inspection", icon: Search },
+    { id: "inspected", label: "Inspected", icon: ShieldCheck },
+    { id: "deposit_refunded", label: "Deposit Refunded", icon: Wallet },
+    { id: "completed", label: "Completed", icon: Sparkles },
   ];
 
   const updateRentalStatus = useCallback((orderId, newRentalStatus) => {

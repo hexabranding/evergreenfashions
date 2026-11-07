@@ -1025,7 +1025,13 @@ export default function Account() {
                                                   : "bg-secondary text-muted-foreground border border-border"
                                               }`}
                                             >
-                                              {isCompleted ? <Check className="w-3.5 h-3.5" /> : step.icon}
+                                              {isCompleted ? (
+                                                <Check className="w-3.5 h-3.5 stroke-[2.2]" />
+                                              ) : typeof step.icon === "function" || typeof step.icon === "object" ? (
+                                                <step.icon className="w-3.5 h-3.5 stroke-[1.8]" />
+                                              ) : (
+                                                step.icon
+                                              )}
                                             </div>
                                             <span
                                               className={`text-[9px] mt-2 text-center leading-tight line-clamp-2 max-w-[68px] ${
