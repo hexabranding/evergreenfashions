@@ -319,6 +319,7 @@ export default function VendorDashboard() {
   const [vendorRentalOrderStatusFilter, setVendorRentalOrderStatusFilter] = useState("All");
   const [expandedVendorOrder, setExpandedVendorOrder] = useState(null);
   const [expandedVendorRentalOrder, setExpandedVendorRentalOrder] = useState(null);
+  const [productModal, setProductModal] = useState(null);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -598,9 +599,27 @@ export default function VendorDashboard() {
       setNewProductForm(false);
       setEditingProduct(null);
       if (!editingProduct) {
-        alert("Product submitted successfully! It is now pending admin verification and will appear in the store once approved.");
+        setProductModal({
+          type: "success",
+          title: "Submitted for Verification",
+          message: "Product submitted successfully! It is now pending admin verification and will appear live in the store once approved.",
+          product: mapped,
+        });
+      } else {
+        setProductModal({
+          type: "success",
+          title: "Product Updated",
+          message: `"${mapped.name}" has been updated successfully.`,
+          product: mapped,
+        });
       }
-    } catch (error) { alert(error.message || "Could not save product."); }
+    } catch (error) {
+      setProductModal({
+        type: "error",
+        title: "Could Not Save Product",
+        message: error.message || "Could not save product.",
+      });
+    }
   };
 
   const handleDeleteProduct = async (product) => {
@@ -2268,6 +2287,86 @@ export default function VendorDashboard() {
           </div>
         </main>
       </div>
+
+      {/* Product Submission / Action Popup Modal */}
+      <AnimatePresence>
+        {productModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-ink/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-md bg-background border border-border/80 p-8 shadow-2xl text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setProductModal(null)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors p-1"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+
+              <div
+                className={`w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center border ${
+                  productModal.type === "error"
+                    ? "bg-red-50 text-crimson border-red-200"
+                    : "bg-emerald-50 text-emerald-600 border-emerald-200/80"
+                }`}
+              >
+                {productModal.type === "error" ? (
+                  <AlertCircle className="w-7 h-7 stroke-[1.8]" />
+                ) : (
+                  <CheckCircle className="w-7 h-7 stroke-[1.8]" />
+                )}
+              </div>
+
+              <p className="eyebrow text-crimson mb-1.5">— Verification Status</p>
+              <h3 className="font-serif text-2xl text-foreground">
+                {productModal.title}
+              </h3>
+
+              <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
+                {productModal.message}
+              </p>
+
+              {productModal.product && (
+                <div className="mt-5 p-3.5 bg-secondary/60 border border-border/60 rounded-sm flex items-center gap-3 text-left">
+                  {productModal.product.img && (
+                    <img
+                      src={productModal.product.img}
+                      alt={productModal.product.name}
+                      className="w-12 h-14 object-cover rounded-sm border border-border/50 shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-serif font-medium text-foreground truncate">
+                      {productModal.product.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      €{productModal.product.price} · {productModal.product.category}
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider rounded-full bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+                    Pending Review
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={() => setProductModal(null)}
+                  className="btn-ink w-full justify-center py-3 text-xs tracking-widest uppercase"
+                >
+                  Got It, Thanks
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
