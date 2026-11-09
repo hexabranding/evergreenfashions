@@ -7,6 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
 import OrderDetailPanel from "@/components/OrderDetailPanel";
+import ReturnStatusTracker from "@/components/ReturnStatusTracker";
 import DispatchModal from "@/components/DispatchModal";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
@@ -1544,57 +1545,64 @@ export default function VendorDashboard() {
                         >
                           <div className="px-6 pb-4">
                             <OrderDetailPanel order={order} showCustomer={true} />
-                            <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap">
-                              {order.status === "return_requested" && (
-                                (order.returnPhotos || []).length > 0 ? (
+                            {/* Status Controls / Return Flow */}
+                            {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
+                              <div className="mt-4 pt-4 border-t border-border">
+                                <ReturnStatusTracker
+                                  order={order}
+                                  onConfirmReturn={confirmReturn}
+                                  isVendorOrAdmin={true}
+                                />
+                              </div>
+                            ) : order.status === "cancelled" ? (
+                              <div className="mt-4 pt-4 border-t border-border">
+                                <div className="w-full flex items-center justify-between bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-sm p-3 text-xs text-zinc-700 dark:text-zinc-300">
+                                  <span className="font-semibold uppercase tracking-wider">Order Cancelled</span>
+                                  <span className="text-[10px] text-zinc-500 font-mono">No forward fulfillment actions available</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex gap-3 mt-4 pt-4 border-t border-border flex-wrap items-center">
+                                <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
+                                  Update Status:
+                                </span>
+                                {["confirmed", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); confirmReturn(order.id); }}
-                                    className="text-xs bg-emerald-600 text-white px-3 py-2 rounded-sm hover:bg-emerald-700 transition-colors"
+                                    key={status}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (status === "dispatched") {
+                                        setDispatchModalOrder(order);
+                                        return;
+                                      }
+                                      updateOrderStatusApi(order.id, status);
+                                      setExpandedVendorOrder(null);
+                                    }}
+                                    disabled={order.status === status}
+                                    className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                      order.status === status
+                                        ? "bg-ink/10 text-ink border border-ink/30"
+                                        : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
                                   >
-                                    Review Photos & Confirm Return
+                                    {status}
                                   </button>
-                                ) : (
-                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
-                                    Awaiting customer return photos
-                                  </span>
-                                )
-                              )}
-                              {["confirmed", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => (
-                                <button
-                                  key={status}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (status === "dispatched") {
+                                ))}
+                                {order.status === "dispatched" && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setDispatchModalOrder(order);
-                                      return;
-                                    }
-                                    updateOrderStatusApi(order.id, status);
-                                    setExpandedVendorOrder(null);
-                                  }}
-                                  disabled={order.status === status}
-                                  className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
-                                    order.status === status
-                                      ? "bg-ink/10 text-ink border border-ink/30"
-                                      : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
-                                  } disabled:opacity-40 disabled:cursor-not-allowed`}
-                                >
-                                  {status}
-                                </button>
-                              ))}
-                              {order.status === "dispatched" && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDispatchModalOrder(order);
-                                  }}
-                                  className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
-                                >
-                                  <Truck size={12} />
-                                  <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
-                                </button>
-                              )}
-                            </div>
+                                    }}
+                                    className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                                  >
+                                    <Truck size={12} />
+                                    <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </motion.div>
                       )}

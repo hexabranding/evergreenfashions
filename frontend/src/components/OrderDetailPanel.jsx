@@ -160,7 +160,7 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
         </div>
       </div>
 
-      {(order.returnRequested || order.status === "return_requested" || (order.returnPhotos || []).length > 0) && (
+      {(order.returnRequested || order.status === "return_requested" || order.status === "returned" || (order.returnPhotos || []).length > 0) && (
         <div className="bg-cream/60 border border-border/50 rounded-sm p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">

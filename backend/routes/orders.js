@@ -324,6 +324,16 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     if (trackingNumber !== undefined) order.trackingNumber = trackingNumber;
 
     if (status && order.status !== status) {
+      if (order.status === 'returned' && status !== 'returned') {
+        return res.status(400).json({ error: 'Cannot modify status of an order that has already been returned' });
+      }
+      if (order.status === 'cancelled' && status !== 'cancelled') {
+        return res.status(400).json({ error: 'Cannot modify status of a cancelled order' });
+      }
+      if (order.status === 'return_requested' && !['returned', 'cancelled', 'delivered'].includes(status)) {
+        return res.status(400).json({ error: 'Cannot move an order in return review to forward fulfillment' });
+      }
+
       order.status = status;
       let description = `Order ${status}`;
       if (status === 'dispatched') {

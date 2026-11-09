@@ -437,6 +437,15 @@ const placeOrder = useCallback(
 
   const updateOrderStatus = useCallback((orderId, newStatus, extraData = {}) => {
     updateOrderInAllStates(orderId, (o) => {
+      if (o.status === "returned" && newStatus !== "returned") {
+        return o;
+      }
+      if (o.status === "cancelled" && newStatus !== "cancelled") {
+        return o;
+      }
+      if (o.status === "return_requested" && !["returned", "cancelled", "delivered"].includes(newStatus)) {
+        return o;
+      }
       const trackingUrl = extraData.trackingUrl !== undefined ? extraData.trackingUrl : o.trackingUrl;
       const courierName = extraData.courierName !== undefined ? extraData.courierName : o.courierName;
       const trackingNumber = extraData.trackingNumber !== undefined ? extraData.trackingNumber : o.trackingNumber;

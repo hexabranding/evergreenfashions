@@ -21,6 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useOrders } from "@/context/OrderContext";
 import { authApi } from "@/api/auth";
 import { ReturnPhotoGallery, ReturnPhotoUploader } from "@/components/ReturnPhotos";
+import ReturnStatusTracker from "@/components/ReturnStatusTracker";
 import { compressImage, MAX_RETURN_PHOTOS } from "@/lib/image";
 import { getRentalDueDate, isRentalOverdue } from "@/lib/utils";
 import { parsePrice } from "@/data/products";
@@ -695,39 +696,54 @@ export default function Account() {
                               className="overflow-hidden"
                             >
                               <div className="px-5 pb-5 border-t border-border pt-4">
-                                {/* Status Timeline */}
-                                <div className="relative flex items-start mb-8 pt-1">
-                                  {statusSteps.map((step, i) => {
-                                    const isCompleted = i <= currentStep;
-                                    return (
-                                      <div key={step} className="relative flex-1 flex flex-col items-center text-center">
-                                        {i < statusSteps.length - 1 && (
+                                {/* Status Timeline / Return Flow */}
+                                {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
+                                  <div className="mb-8">
+                                    <ReturnStatusTracker order={order} isVendorOrAdmin={false} />
+                                  </div>
+                                ) : order.status === "cancelled" ? (
+                                  <div className="mb-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-sm p-4 text-center">
+                                    <p className="text-xs uppercase tracking-widest text-zinc-700 dark:text-zinc-300 font-semibold">
+                                      Order Cancelled
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      This order was cancelled and will not be delivered.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="relative flex items-start mb-8 pt-1">
+                                    {statusSteps.map((step, i) => {
+                                      const isCompleted = i <= currentStep;
+                                      return (
+                                        <div key={step} className="relative flex-1 flex flex-col items-center text-center">
+                                          {i < statusSteps.length - 1 && (
+                                            <div
+                                              className={`absolute top-3 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
+                                                i < currentStep ? "bg-ink" : "bg-border"
+                                              }`}
+                                            />
+                                          )}
                                           <div
-                                            className={`absolute top-3 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
-                                              i < currentStep ? "bg-ink" : "bg-border"
+                                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-secondary ${
+                                              isCompleted
+                                                ? "bg-ink text-cream"
+                                                : "bg-border text-muted-foreground"
                                             }`}
-                                          />
-                                        )}
-                                        <div
-                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-secondary ${
-                                            isCompleted
-                                              ? "bg-ink text-cream"
-                                              : "bg-border text-muted-foreground"
-                                          }`}
-                                        >
-                                          {isCompleted ? <Check size={12} strokeWidth={2.5} /> : i + 1}
+                                          >
+                                            {isCompleted ? <Check size={12} strokeWidth={2.5} /> : i + 1}
+                                          </div>
+                                          <span
+                                            className={`text-[10px] mt-2 capitalize tracking-wider font-medium hidden sm:block ${
+                                              isCompleted ? "text-foreground font-semibold" : "text-muted-foreground"
+                                            }`}
+                                          >
+                                            {step}
+                                          </span>
                                         </div>
-                                        <span
-                                          className={`text-[10px] mt-2 capitalize tracking-wider font-medium hidden sm:block ${
-                                            isCompleted ? "text-foreground font-semibold" : "text-muted-foreground"
-                                          }`}
-                                        >
-                                          {step}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
 
                                 {/* Courier & Live Tracking Card */}
                                 {(order.trackingUrl || order.courierName || order.status === "dispatched" || order.status === "shipped") && (
