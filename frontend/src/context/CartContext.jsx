@@ -112,7 +112,7 @@ function mergeWishlists(existingWishlist = [], incomingWishlist = []) {
 }
 
 export function CartProvider({ children }) {
-  const { placeOrder: createSharedOrder } = useOrders();
+  const { placeOrder: createSharedOrder, syncBackendOrder } = useOrders();
   const { isAuthenticated, currentUser } = useAuth();
   const currentUserId = currentUser?.id || null;
 
@@ -343,6 +343,7 @@ export function CartProvider({ children }) {
         // Keep the local order shape (used by the Confirmation page) but swap in
         // the real backend id so post-order actions (OTP, status) can find it.
         savedOrder = { ...newOrder, id: backendOrder._id || backendOrder.id, phoneVerified: !!backendOrder.phoneVerified };
+        syncBackendOrder?.(newOrder.id, backendOrder);
       } catch {
         // Backend might be unreachable; local order is still saved
       }
@@ -355,7 +356,7 @@ export function CartProvider({ children }) {
       localStorage.removeItem("ef_cart");
       return savedOrder;
     },
-    [cartItems, coupon, discount, createSharedOrder, currentUser?.id]
+    [cartItems, coupon, discount, createSharedOrder, syncBackendOrder, currentUser?.id]
   );
 
   const updateOrder = useCallback((patch) => {

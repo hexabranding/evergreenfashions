@@ -73,7 +73,7 @@ const listItem = {
 
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
-  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, uploadReturnPhotos, rentalStatusSteps } = useOrders();
+  const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, uploadReturnPhotos, rentalStatusSteps, isSameOrder } = useOrders();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -170,13 +170,16 @@ export default function Account() {
       const uid = o.userId || o.user;
       return uid === user?.id;
     });
+    const nonDuplicateLocal = localOrders.filter(
+      (local) => !apiOrders.some((api) => (isSameOrder ? isSameOrder(local, api) : (api.id === local.id || api._id === local.id)))
+    );
     const byId = {};
-    [...localOrders, ...apiOrders].forEach((o) => {
+    [...nonDuplicateLocal, ...apiOrders].forEach((o) => {
       const key = o.id || o._id;
       if (key && !byId[key]) byId[key] = o;
     });
     return Object.values(byId).sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [getOrdersByUser, customerApiOrders, user]);
+  }, [getOrdersByUser, customerApiOrders, user, isSameOrder]);
 
   const rentalOrders = useMemo(() => orders.filter((o) => o.rentalDetails), [orders]);
   const normalOrders = useMemo(() => orders.filter((o) => !o.rentalDetails), [orders]);

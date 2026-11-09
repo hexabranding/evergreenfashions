@@ -289,6 +289,7 @@ export default function AdminDashboard({ isVendor }) {
     reviews,
     getReviewsByProduct,
     getAverageRating,
+    isSameOrder,
   } = useOrders();
 
   const isVendorPanel = isVendor || currentUser?.role === "vendor";
@@ -321,16 +322,20 @@ export default function AdminDashboard({ isVendor }) {
   const orderNameScope = isVendorPanel ? currentUser?.id || currentUser?.vendorStore?.id || null : null;
 
   const orders = useMemo(() => {
-    const merged = [...contextOrders];
-    const seen = new Set(contextOrders.map((o) => o.id));
-    for (const o of panelApiOrders) {
-      if (!seen.has(o.id)) {
+    const nonDuplicateContext = contextOrders.filter(
+      (local) => !panelApiOrders.some((api) => (isSameOrder ? isSameOrder(local, api) : (api.id === local.id || api._id === local.id)))
+    );
+    const seen = new Set();
+    const merged = [];
+    for (const o of [...nonDuplicateContext, ...panelApiOrders]) {
+      const id = o.id || o._id;
+      if (id && !seen.has(id)) {
+        seen.add(id);
         merged.push(o);
-        seen.add(o.id);
       }
     }
     return merged;
-  }, [contextOrders, panelApiOrders]);
+  }, [contextOrders, panelApiOrders, isSameOrder]);
 
   const normalOrders = useMemo(() => orders.filter((o) => !isRentalOrder(o)), [orders]);
   const rentalOrders = useMemo(() => orders.filter((o) => isRentalOrder(o)), [orders]);

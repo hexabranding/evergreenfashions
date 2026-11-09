@@ -43,6 +43,26 @@ function mapApiOrder(order) {
   };
 }
 
+export function isSameOrder(localOrder, apiOrder) {
+  if (!localOrder || !apiOrder) return false;
+  const localId = localOrder.id || localOrder._id;
+  const apiId = apiOrder.id || apiOrder._id;
+  if (localId && apiId && localId === apiId) return true;
+
+  if (typeof localId === "string" && localId.startsWith("EF-")) {
+    const localDate = new Date(localOrder.date || localOrder.createdAt).getTime();
+    const apiDate = new Date(apiOrder.date || apiOrder.createdAt).getTime();
+    const timeDiff = Math.abs(localDate - apiDate);
+    const totalMatch = Math.abs(Number(localOrder.total || 0) - Number(apiOrder.total || 0)) < 1;
+    const itemsMatch = (localOrder.items?.length || 0) === (apiOrder.items?.length || 0);
+
+    if (!isNaN(timeDiff) && timeDiff < 15 * 60 * 1000 && totalMatch && itemsMatch) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function buildInventoryFromProducts(products) {
   const inventory = {};
   if (!products || !Array.isArray(products)) return inventory;
@@ -377,6 +397,23 @@ const placeOrder = useCallback(
     },
     [updateStock]
   );
+
+  const syncBackendOrder = useCallback((tempId, backendOrder) => {
+    if (!tempId || !backendOrder) return;
+    const realId = backendOrder._id || backendOrder.id;
+    const mapped = mapApiOrder(backendOrder);
+
+    setOrders((prev) =>
+      prev.map((o) => (o.id === tempId ? { ...o, ...mapped, id: realId } : o))
+    );
+    setCustomerApiOrders((prev) => {
+      const exists = prev.some((o) => (o.id || o._id) === realId);
+      if (exists) {
+        return prev.map((o) => ((o.id || o._id) === realId ? mapped : o));
+      }
+      return [mapped, ...prev];
+    });
+  }, []);
 
   const getOrdersByUser = useCallback(
     (userId) => {
@@ -765,6 +802,14 @@ const placeOrder = useCallback(
         })),
       }));
       setVendorApiOrders(mapped);
+      setOrders((prev) =>
+        prev.filter((local) => {
+          if (typeof local.id === "string" && local.id.startsWith("EF-")) {
+            return !mapped.some((api) => isSameOrder(local, api));
+          }
+          return true;
+        })
+      );
       return mapped;
     } catch {
       const demo = buildDemoOrders();
@@ -791,6 +836,14 @@ const placeOrder = useCallback(
         })),
       }));
       setAdminApiOrders(mapped);
+      setOrders((prev) =>
+        prev.filter((local) => {
+          if (typeof local.id === "string" && local.id.startsWith("EF-")) {
+            return !mapped.some((api) => isSameOrder(local, api));
+          }
+          return true;
+        })
+      );
       return mapped;
     } catch {
       const demo = buildDemoOrders();
@@ -817,6 +870,14 @@ const placeOrder = useCallback(
         })),
       }));
       setCustomerApiOrders(mapped);
+      setOrders((prev) =>
+        prev.filter((local) => {
+          if (typeof local.id === "string" && local.id.startsWith("EF-")) {
+            return !mapped.some((api) => isSameOrder(local, api));
+          }
+          return true;
+        })
+      );
       return mapped;
     } catch {
       const demo = buildDemoOrders();
@@ -907,6 +968,8 @@ const placeOrder = useCallback(
         updateOrderStatusApi,
         updateRentalStatusApi,
         cancelOrderApi,
+        syncBackendOrder,
+        isSameOrder,
       }}
     >
       {children}

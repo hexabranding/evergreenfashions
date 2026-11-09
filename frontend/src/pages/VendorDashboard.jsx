@@ -276,6 +276,7 @@ export default function VendorDashboard() {
     rentalStatusSteps,
     confirmReturn,
     inspectOrder,
+    isSameOrder,
   } = useOrders();
   const navigate = useNavigate();
 
@@ -435,16 +436,20 @@ export default function VendorDashboard() {
 
   const localVendorOrders = getOrdersByVendor(vendor.id);
   const vendorOrders = useMemo(() => {
-    const allIds = new Set(localVendorOrders.map((o) => o.id));
-    const merged = [...localVendorOrders];
-    for (const o of vendorApiOrders) {
-      if (!allIds.has(o.id)) {
+    const nonDuplicateLocal = localVendorOrders.filter(
+      (local) => !vendorApiOrders.some((api) => (isSameOrder ? isSameOrder(local, api) : (api.id === local.id || api._id === local.id)))
+    );
+    const seen = new Set();
+    const merged = [];
+    for (const o of [...nonDuplicateLocal, ...vendorApiOrders]) {
+      const id = o.id || o._id;
+      if (id && !seen.has(id)) {
+        seen.add(id);
         merged.push(o);
-        allIds.add(o.id);
       }
     }
     return merged;
-  }, [localVendorOrders, vendorApiOrders]);
+  }, [localVendorOrders, vendorApiOrders, isSameOrder]);
   const normalOrders = useMemo(() => vendorOrders.filter((o) => !o.rentalDetails), [vendorOrders]);
   const rentalOrders = useMemo(() => vendorOrders.filter((o) => o.rentalDetails), [vendorOrders]);
   const recentOrders = [...normalOrders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
