@@ -39,7 +39,7 @@ const fadeUp = {
   }),
 };
 
-export default function AddProductForm({ categories, vendors, onSave, onCancel, editProduct }) {
+export default function AddProductForm({ categories, vendors, onSave, onCancel, editProduct, defaultRental = false, title }) {
   const fileInputRef = useRef(null);
   const colorFileRefs = useRef({});
   const [uploading, setUploading] = useState(false);
@@ -57,9 +57,9 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
     price: editProduct?.price || "",
     description: editProduct?.description || "",
     gender: editProduct?.gender || "Womenswear",
-    rentalAvailable: editProduct?.rentalAvailable || false,
-    rentalPricePerDay: editProduct?.rentalPricePerDay || "",
-    rentalDeposit: editProduct?.rentalDeposit || "",
+    rentalAvailable: editProduct?.rentalAvailable !== undefined ? !!editProduct.rentalAvailable : !!defaultRental,
+    rentalPricePerDay: editProduct?.rentalPricePerDay || (defaultRental ? "50" : ""),
+    rentalDeposit: editProduct?.rentalDeposit || (defaultRental ? "100" : ""),
     sizes: editProduct?.sizes || [...DEFAULT_SIZES],
     sizePreset: "Standard",
     colors: editProduct?.colors || [],
@@ -263,7 +263,7 @@ export default function AddProductForm({ categories, vendors, onSave, onCancel, 
       <form onSubmit={handleSubmit} className="bg-secondary border border-border/60 rounded-sm p-6 space-y-8">
         <div className="flex items-center justify-between">
           <h3 className="font-serif text-lg text-foreground">
-            {editProduct ? "Edit Product" : "Add New Product"}
+            {title || (editProduct ? "Edit Product" : "Add New Product")}
           </h3>
           <button type="button" onClick={onCancel} className="text-muted-foreground hover:text-foreground">
             <X size={18} />

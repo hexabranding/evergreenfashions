@@ -318,6 +318,10 @@ export default function VendorDashboard() {
   const [editingProduct, setEditingProduct] = useState(null);
   const productFormRef = useRef(null);
 
+  const [newRentalForm, setNewRentalForm] = useState(false);
+  const [editingRentalProduct, setEditingRentalProduct] = useState(null);
+  const rentalFormRef = useRef(null);
+
   const [localInventory, setLocalInventory] = useState({});
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [vendorOrderSearch, setVendorOrderSearch] = useState("");
@@ -691,8 +695,65 @@ export default function VendorDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const handleAddRental = () => {
+    setEditingRentalProduct(null);
+    setNewRentalForm((prev) => !prev);
+    setTimeout(() => rentalFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+  };
+
   const handleRentalEdit = (product) => {
-    alert(`Edit rental for "${product.name}" — Rental price: €${product.rentalPricePerDay}/day. Use the Products tab to edit details.`);
+    setEditingRentalProduct(product);
+    setNewRentalForm(true);
+    setTimeout(() => rentalFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+  };
+
+  const handleSaveRentalProduct = async (product) => {
+    const inventory = Object.entries(product.stock || {}).map(([size, stock]) => ({ size, stock: Number(stock) }));
+    const payload = {
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      description: product.description,
+      gender: product.gender,
+      colors: product.colors,
+      sizes: product.sizes,
+      img: product.img,
+      images: product.images,
+      colorImages: product.colorImages,
+      inventory,
+      rentalAvailable: true,
+      rentalPricePerDay: Number(product.rentalPricePerDay) || Math.round(Number(product.price) * 0.1) || 50,
+      rentalDeposit: Number(product.rentalDeposit) || 100,
+      vendorId: vendor.id || currentUser.id,
+    };
+    try {
+      const saved = editingRentalProduct
+        ? await productsApi.update(editingRentalProduct.id, payload)
+        : await productsApi.create(payload);
+      const mapped = {
+        ...saved,
+        id: saved._id || saved.id,
+        stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])),
+        approvalStatus: saved.approvalStatus || (editingRentalProduct ? editingRentalProduct.approvalStatus : "pending"),
+      };
+      setVendorProductsList((prev) => editingRentalProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+      setNewRentalForm(false);
+      setEditingRentalProduct(null);
+      setProductModal({
+        type: "success",
+        title: editingRentalProduct ? "Rental Item Updated" : "Rental Item Submitted",
+        message: editingRentalProduct
+          ? `"${mapped.name}" rental details have been updated successfully.`
+          : `"${mapped.name}" has been added as a rental item and submitted for verification.`,
+        product: mapped,
+      });
+    } catch (error) {
+      setProductModal({
+        type: "error",
+        title: "Submission Error",
+        message: error.message || "Could not save rental item.",
+      });
+    }
   };
 
   const handleToggleRentalDisable = (productId) => {
@@ -1119,12 +1180,30 @@ export default function VendorDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="eyebrow">Rental Listings</h2>
         <button
-          onClick={handleAddProduct}
+          onClick={handleAddRental}
           className="btn-ink px-5 py-2.5 text-xs tracking-widest uppercase flex items-center gap-2"
         >
           <Plus size={14} />
-          Add Rental Item
+          {newRentalForm ? "Close Form" : "Add Rental Item"}
         </button>
+      </div>
+
+      <div ref={rentalFormRef}>
+        <AnimatePresence>
+          {newRentalForm && (
+            <AddProductForm
+              categories={PRODUCT_CATEGORIES}
+              editProduct={editingRentalProduct}
+              defaultRental={true}
+              title={editingRentalProduct ? "Edit Rental Item" : "Add New Rental Item"}
+              onSave={handleSaveRentalProduct}
+              onCancel={() => {
+                setNewRentalForm(false);
+                setEditingRentalProduct(null);
+              }}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       {rentalProducts.length === 0 ? (
@@ -1133,11 +1212,12 @@ export default function VendorDashboard() {
           title="No Rental Listings"
           description="Add rental availability to your products to start earning from rentals."
           action="Add Rental Item"
-          onAction={handleAddProduct}
+          onAction={handleAddRental}
         />
       ) : (
         <div className="space-y-4">
           {rentalProducts.map((product) => {
+            const isOwned = isMyProduct(product);
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
             const rentalCount = rentalOrders.filter(
@@ -1153,8 +1233,11 @@ export default function VendorDashboard() {
                 className="bg-secondary border border-border/60 rounded-sm p-5"
               >
                 <div className="flex flex-col sm:flex-row gap-5">
-                  <div className="w-24 h-32 flex-shrink-0 overflow-hidden rounded-sm">
+                  <div className="w-24 h-32 flex-shrink-0 overflow-hidden rounded-sm relative">
                     <img src={product.img} alt={product.name} className="w-full h-full object-cover" />
+                    <span className="absolute bottom-1 left-1 text-[9px] font-medium bg-background/90 backdrop-blur-sm text-foreground/80 border border-border px-1.5 py-0.5 rounded-sm">
+                      {isOwned ? "Your Item" : (product.vendor || "Other Vendor")}
+                    </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between mb-2">
@@ -1185,22 +1268,36 @@ export default function VendorDashboard() {
                         <p className="text-sm font-medium text-foreground">{parsePrice(product.rentalPricePerDay * stats.estMonthlyRentals)}</p>
                       </div>
                     </div>
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={() => handleRentalEdit(product)}
-                        className="text-xs tracking-widest uppercase py-2 px-4 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center gap-1.5"
-                      >
-                        <Edit2 size={12} />
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleToggleRentalDisable(product.id)}
-                        className="text-xs tracking-widest uppercase py-2 px-4 border border-border/60 text-crimson hover:bg-crimson/5 transition-colors flex items-center gap-1.5"
-                      >
-                        <Ban size={12} />
-                        Disable
-                      </button>
-                    </div>
+                    {isOwned ? (
+                      <div className="flex gap-2 mt-4">
+                        <button
+                          onClick={() => handleRentalEdit(product)}
+                          className="text-xs tracking-widest uppercase py-2 px-4 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center gap-1.5"
+                        >
+                          <Edit2 size={12} />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleToggleRentalDisable(product.id)}
+                          className="text-xs tracking-widest uppercase py-2 px-4 border border-border/60 text-crimson hover:bg-crimson/5 transition-colors flex items-center gap-1.5"
+                        >
+                          <Ban size={12} />
+                          Disable
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-4">
+                        <Link
+                          to={`/product/${product.slug || product.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs tracking-widest uppercase py-2 px-4 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center gap-1.5"
+                        >
+                          <ExternalLink size={12} />
+                          View in Store
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
