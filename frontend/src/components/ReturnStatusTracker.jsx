@@ -1,200 +1,185 @@
 import React from "react";
-import { RotateCcw, Camera, ShieldCheck, CheckCircle2, Check, Clock, AlertCircle, ArrowRight } from "lucide-react";
+import { Check, Camera, RotateCcw, Search, ShieldCheck, Wallet, CheckCircle2, AlertCircle, Plus } from "lucide-react";
+import { ReturnPhotoGallery } from "@/components/ReturnPhotos";
 
 /**
  * ReturnStatusTracker
- * Renders an industry-standard 4-step reverse logistics lifecycle:
- * 1. Return Requested -> 2. Proof Photos -> 3. Quality Review -> 4. Restocked & Closed
+ * Renders the exact luxury signature Return Roadmap (connecting line + black circle checkmarks)
+ * including the dedicated "Return Photos" step requested by the user:
+ * [Return Requested] ─── [Return Photos] ─── [Awaiting Inspection] ─── [Inspected] ─── [Refunded] ─── [Completed]
  */
-export default function ReturnStatusTracker({ order, onConfirmReturn, isVendorOrAdmin = false }) {
+export default function ReturnStatusTracker({
+  order,
+  onConfirmReturn,
+  onUploadPhotos,
+  isVendorOrAdmin = false,
+}) {
   if (!order) return null;
 
-  const isReturned = order.status === "returned";
+  const isRental = Boolean(order.rentalDetails);
+  const isReturned = order.status === "returned" || order.rentalStatus === "completed";
   const hasPhotos = (order.returnPhotos || []).length > 0;
-  const isReviewed = Boolean(order.returnPhotosReviewed || isReturned);
-
-  // Determine current active step index (0 to 3)
-  // Step 0: Requested
-  // Step 1: Photos uploaded
-  // Step 2: Quality review & inspection
-  // Step 3: Restocked & closed
-  let activeStepIdx = 0;
-  if (isReturned) {
-    activeStepIdx = 3;
-  } else if (isReviewed) {
-    activeStepIdx = 2;
-  } else if (hasPhotos) {
-    activeStepIdx = 2; // Photos are in, waiting for review
-  } else {
-    activeStepIdx = 1; // Return requested, waiting for photos
-  }
+  const isReviewed = Boolean(order.returnPhotosReviewed || order.rentalStatus === "inspected" || isReturned);
+  const isRefunded = Boolean(order.depositRefunded || isReturned);
 
   const steps = [
-    {
-      id: "requested",
-      label: "Return Requested",
-      sublabel: order.returnReason ? `"${order.returnReason}"` : "Customer initiated",
-      icon: RotateCcw,
-      completed: true,
-      current: activeStepIdx === 0,
-      date: order.returnRequestedDate || (order.timeline?.find((t) => t.status === "return_requested")?.date),
-    },
-    {
-      id: "photos",
-      label: "Proof Photos",
-      sublabel: hasPhotos ? `${order.returnPhotos.length} photo(s) submitted` : "Awaiting customer photos",
-      icon: Camera,
-      completed: hasPhotos,
-      current: activeStepIdx === 1,
-      date: order.returnPhotosDate,
-    },
-    {
-      id: "inspection",
-      label: "Quality Review",
-      sublabel: isReviewed ? "Photos verified" : hasPhotos ? "Awaiting seller review" : "Pending photos",
-      icon: ShieldCheck,
-      completed: isReviewed,
-      current: activeStepIdx === 2,
-    },
-    {
-      id: "restocked",
-      label: "Restocked & Closed",
-      sublabel: isReturned ? "Inventory restored" : "Final step",
-      icon: CheckCircle2,
-      completed: isReturned,
-      current: activeStepIdx === 3,
-    },
+    { id: "requested", label: "Return Requested", icon: RotateCcw },
+    { id: "photos", label: "Return Photos", icon: Camera },
+    { id: "awaiting_inspection", label: "Awaiting Inspection", icon: Search },
+    { id: "inspected", label: "Inspected", icon: ShieldCheck },
+    { id: "refunded", label: isRental ? "Deposit Refunded" : "Refund Processed", icon: Wallet },
+    { id: "completed", label: "Completed", icon: CheckCircle2 },
   ];
 
-  return (
-    <div className="w-full bg-cream/70 dark:bg-card border border-border/80 rounded-sm p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-border/60">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center">
-            <RotateCcw size={14} />
-          </div>
-          <div>
-            <h4 className="text-xs font-serif uppercase tracking-widest text-foreground font-semibold">
-              Reverse Logistics / Return Flow
-            </h4>
-            <p className="text-[11px] text-muted-foreground">
-              {isReturned
-                ? "Return completed. Item restocked in inventory and order closed."
-                : "Active return process. Forward order fulfillment is locked."}
-            </p>
-          </div>
-        </div>
+  // Determine current active step index (0 to 5)
+  // When an order is fully returned/completed, ALL steps are completed.
+  let currentStepIdx = 0;
+  if (isReturned) {
+    currentStepIdx = 5;
+  } else if (isRefunded) {
+    currentStepIdx = 4;
+  } else if (isReviewed) {
+    currentStepIdx = 3;
+  } else if (hasPhotos) {
+    currentStepIdx = 2; // Photos uploaded, awaiting inspection
+  } else {
+    currentStepIdx = 1; // Return requested, awaiting photos
+  }
 
-        <div>
-          {isReturned ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium bg-emerald-100 text-emerald-800 rounded-sm border border-emerald-200">
-              <CheckCircle2 size={13} />
-              Return Completed
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium bg-amber-100 text-amber-900 rounded-sm border border-amber-300">
-              <Clock size={13} />
-              Return In Progress
-            </span>
-          )}
-        </div>
+  return (
+    <div className="bg-background rounded-sm p-4 mb-4 border border-border">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+          Return Roadmap
+        </p>
+        {order.returnReason && (
+          <span className="text-xs text-muted-foreground max-w-[60%] truncate" title={order.returnReason}>
+            Reason: {order.returnReason}
+          </span>
+        )}
       </div>
 
-      {/* 4-Step Stepper */}
-      <div className="relative pt-2 pb-1">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Stepper (Line and Circles) */}
+      <div className="overflow-x-auto pb-3">
+        <div className="flex items-start min-w-[560px] relative">
           {steps.map((step, idx) => {
-            const Icon = step.icon;
-            const isCompleted = step.completed;
-            const isCurrent = step.current;
+            const isCompleted = isReturned ? true : idx <= currentStepIdx;
+            const isCurrent = isReturned ? idx === 5 : idx === currentStepIdx;
 
             return (
-              <div
-                key={step.id}
-                className={`relative flex flex-col p-3 rounded-sm border transition-all ${
-                  isCompleted
-                    ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300"
-                    : isCurrent
-                    ? "bg-amber-50/70 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/40 text-amber-900 dark:text-amber-300 ring-1 ring-amber-300"
-                    : "bg-background/40 border-border/50 text-muted-foreground opacity-60"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
+              <div key={step.id} className="relative flex-1 flex flex-col items-center text-center">
+                {/* Connecting Line */}
+                {idx < steps.length - 1 && (
                   <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                      isCompleted
-                        ? "bg-emerald-600 text-white"
-                        : isCurrent
-                        ? "bg-amber-500 text-white animate-pulse"
-                        : "bg-muted text-muted-foreground"
+                    className={`absolute top-3.5 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
+                      isReturned || idx < currentStepIdx ? "bg-ink" : "bg-border"
                     }`}
-                  >
-                    {isCompleted ? <Check size={12} strokeWidth={2.5} /> : idx + 1}
-                  </div>
-                  <Icon size={14} className={isCompleted ? "text-emerald-700" : isCurrent ? "text-amber-700" : "text-muted-foreground"} />
+                  />
+                )}
+
+                {/* Circle */}
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-background ${
+                    isCompleted
+                      ? "bg-ink text-cream"
+                      : isCurrent
+                      ? "bg-ink/20 text-ink border-2 border-ink"
+                      : "bg-secondary text-muted-foreground border border-border"
+                  }`}
+                >
+                  {isCompleted ? (
+                    <Check className="w-3.5 h-3.5 stroke-[2.2]" />
+                  ) : typeof step.icon === "function" || typeof step.icon === "object" ? (
+                    <step.icon className="w-3.5 h-3.5 stroke-[1.8]" />
+                  ) : (
+                    step.icon
+                  )}
                 </div>
 
-                <p className="text-xs font-semibold capitalize tracking-wide">{step.label}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate" title={step.sublabel}>
-                  {step.sublabel}
-                </p>
-
-                {step.date && (
-                  <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">
-                    {new Date(step.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                )}
+                {/* Label */}
+                <span
+                  className={`text-[10px] sm:text-xs mt-2 text-center leading-tight line-clamp-2 max-w-[85px] ${
+                    isCurrent
+                      ? "text-foreground font-semibold"
+                      : isCompleted
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {step.label}
+                </span>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Action / Information Bar for Vendor & Admin */}
-      {isVendorOrAdmin && (
-        <div className="pt-2 border-t border-border/60 flex items-center justify-between flex-wrap gap-3">
-          {isReturned ? (
-            <div className="flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 rounded-sm px-3.5 py-2 w-full">
-              <CheckCircle2 size={15} className="flex-shrink-0 text-emerald-600" />
-              <span>
-                <strong>Inventory Restored & Order Closed:</strong> Forward delivery buttons (Preparing, Dispatched, Shipped) are locked to protect the return lifecycle.
-              </span>
+      {/* Photos Preview & Return Action Area */}
+      <div className="mt-4 pt-3 border-t border-border/60">
+        {hasPhotos ? (
+          <div className="space-y-3">
+            <ReturnPhotoGallery
+              photos={order.returnPhotos}
+              title={`Return photos submitted by customer (${order.returnPhotos.length})`}
+            />
+            {order.returnPhotosDate && (
+              <p className="text-[10px] text-muted-foreground font-mono">
+                Uploaded {new Date(order.returnPhotosDate).toLocaleString()}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between flex-wrap gap-3 py-1">
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2">
+              <AlertCircle size={14} className="flex-shrink-0" />
+              <span>Awaiting item photos from the customer before return can be confirmed.</span>
             </div>
-          ) : order.status === "return_requested" ? (
-            <div className="flex items-center justify-between flex-wrap gap-3 w-full">
-              {hasPhotos ? (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs text-foreground flex items-center gap-1.5">
-                    <AlertCircle size={14} className="text-emerald-600" />
-                    Customer has uploaded <strong>{order.returnPhotos.length} photo(s)</strong>.
+            {!isVendorOrAdmin && onUploadPhotos && (
+              <button
+                type="button"
+                onClick={() => onUploadPhotos(order.id)}
+                className="btn-ink px-3 py-1.5 text-xs flex items-center gap-1.5"
+              >
+                <Plus size={13} />
+                <span>Upload Photos</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Vendor & Admin Action Controls */}
+        {isVendorOrAdmin && (
+          <div className="mt-4 pt-3 border-t border-border flex items-center justify-between flex-wrap gap-3">
+            {isReturned ? (
+              <div className="flex items-center gap-2 text-xs text-emerald-800 font-medium">
+                <CheckCircle2 size={15} className="text-emerald-600" />
+                <span>Return completed & inventory restocked. Forward fulfillment is locked.</span>
+              </div>
+            ) : order.status === "return_requested" ? (
+              <div className="flex items-center gap-3">
+                {hasPhotos ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onConfirmReturn) onConfirmReturn(order.id);
+                    }}
+                    className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-sm hover:bg-emerald-700 transition-colors flex items-center gap-1.5 font-medium shadow-sm"
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>Review Photos & Confirm Return</span>
+                  </button>
+                ) : (
+                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
+                    Awaiting customer return photos
                   </span>
-                  {onConfirmReturn && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onConfirmReturn(order.id);
-                      }}
-                      className="text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-sm shadow-sm transition-colors flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 size={13} />
-                      <span>Review Photos & Confirm Return</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 w-full">
-                  <AlertCircle size={14} className="flex-shrink-0 text-amber-600" />
-                  <span>
-                    Waiting for customer to upload photos of the item before return can be confirmed and inventory restocked.
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

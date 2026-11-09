@@ -699,7 +699,15 @@ export default function Account() {
                                 {/* Status Timeline / Return Flow */}
                                 {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
                                   <div className="mb-8">
-                                    <ReturnStatusTracker order={order} isVendorOrAdmin={false} />
+                                    <ReturnStatusTracker
+                                      order={order}
+                                      isVendorOrAdmin={false}
+                                      onUploadPhotos={(orderId) => {
+                                        setReturnOrderId(orderId);
+                                        setReturnReason(order.returnReason || "");
+                                        setReturnStep(2);
+                                      }}
+                                    />
                                   </div>
                                 ) : order.status === "cancelled" ? (
                                   <div className="mb-8 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-sm p-4 text-center">
@@ -1080,53 +1088,65 @@ export default function Account() {
                                   </div>
                                 )}
 
-                                {/* Rental Return Roadmap - 10 Step Lifecycle */}
-                                <div className="bg-background rounded-sm p-4 mb-6 border border-border">
-                                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-4">Return Roadmap</p>
-                                  <div className="overflow-x-auto pb-2">
-                                    <div className="flex items-start min-w-[720px] relative">
-                                      {rentalStatusSteps.map((step, idx) => {
-                                        const isCompleted = idx <= currentRentalStep;
-                                        const isCurrent = idx === currentRentalStep;
-                                        return (
-                                          <div key={step.id} className="relative flex-1 flex flex-col items-center text-center">
-                                            {idx < rentalStatusSteps.length - 1 && (
-                                              <div
-                                                className={`absolute top-3.5 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
-                                                  idx < currentRentalStep ? "bg-ink" : "bg-border"
-                                                }`}
-                                              />
-                                            )}
-                                            <div
-                                              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-background ${
-                                                isCompleted
-                                                  ? "bg-ink text-cream"
-                                                  : isCurrent
-                                                  ? "bg-ink/20 text-ink border-2 border-ink"
-                                                  : "bg-secondary text-muted-foreground border border-border"
-                                              }`}
-                                            >
-                                              {isCompleted ? (
-                                                <Check className="w-3.5 h-3.5 stroke-[2.2]" />
-                                              ) : typeof step.icon === "function" || typeof step.icon === "object" ? (
-                                                <step.icon className="w-3.5 h-3.5 stroke-[1.8]" />
-                                              ) : (
-                                                step.icon
+                                {/* Rental Return Roadmap */}
+                                {order.returnRequested || order.status === "returned" || ["pending_return", "awaiting_inspection", "inspected", "deposit_refunded", "completed"].includes(order.rentalStatus) ? (
+                                  <ReturnStatusTracker
+                                    order={order}
+                                    isVendorOrAdmin={false}
+                                    onUploadPhotos={(orderId) => {
+                                      setReturnOrderId(orderId);
+                                      setReturnReason(order.returnReason || "");
+                                      setReturnStep(2);
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="bg-background rounded-sm p-4 mb-6 border border-border">
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-4">Rental Roadmap</p>
+                                    <div className="overflow-x-auto pb-2">
+                                      <div className="flex items-start min-w-[720px] relative">
+                                        {rentalStatusSteps.map((step, idx) => {
+                                          const isCompleted = idx <= currentRentalStep;
+                                          const isCurrent = idx === currentRentalStep;
+                                          return (
+                                            <div key={step.id} className="relative flex-1 flex flex-col items-center text-center">
+                                              {idx < rentalStatusSteps.length - 1 && (
+                                                <div
+                                                  className={`absolute top-3.5 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
+                                                    idx < currentRentalStep ? "bg-ink" : "bg-border"
+                                                  }`}
+                                                />
                                               )}
+                                              <div
+                                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-background ${
+                                                  isCompleted
+                                                    ? "bg-ink text-cream"
+                                                    : isCurrent
+                                                    ? "bg-ink/20 text-ink border-2 border-ink"
+                                                    : "bg-secondary text-muted-foreground border border-border"
+                                                }`}
+                                              >
+                                                {isCompleted ? (
+                                                  <Check className="w-3.5 h-3.5 stroke-[2.2]" />
+                                                ) : typeof step.icon === "function" || typeof step.icon === "object" ? (
+                                                  <step.icon className="w-3.5 h-3.5 stroke-[1.8]" />
+                                                ) : (
+                                                  step.icon
+                                                )}
+                                              </div>
+                                              <span
+                                                className={`text-[9px] mt-2 text-center leading-tight line-clamp-2 max-w-[68px] ${
+                                                  isCurrent ? "text-foreground font-semibold" : "text-muted-foreground"
+                                                }`}
+                                              >
+                                                {step.label}
+                                              </span>
                                             </div>
-                                            <span
-                                              className={`text-[9px] mt-2 text-center leading-tight line-clamp-2 max-w-[68px] ${
-                                                isCurrent ? "text-foreground font-semibold" : "text-muted-foreground"
-                                              }`}
-                                            >
-                                              {step.label}
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
+                                )}
 
                                 {/* Order Items */}
                                 <div className="space-y-3 mb-4">
