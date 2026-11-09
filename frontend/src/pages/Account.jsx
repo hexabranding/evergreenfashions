@@ -662,32 +662,37 @@ export default function Account() {
                             >
                               <div className="px-5 pb-5 border-t border-border pt-4">
                                 {/* Status Timeline */}
-                                <div className="flex items-center gap-0 mb-6">
-                                  {statusSteps.map((step, i) => (
-                                    <div key={step} className="flex-1 flex items-center">
-                                      <div className="flex flex-col items-center flex-shrink-0">
+                                <div className="relative flex items-start mb-8 pt-1">
+                                  {statusSteps.map((step, i) => {
+                                    const isCompleted = i <= currentStep;
+                                    return (
+                                      <div key={step} className="relative flex-1 flex flex-col items-center text-center">
+                                        {i < statusSteps.length - 1 && (
+                                          <div
+                                            className={`absolute top-3 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
+                                              i < currentStep ? "bg-ink" : "bg-border"
+                                            }`}
+                                          />
+                                        )}
                                         <div
-                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                                            i <= currentStep
+                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors z-10 relative ring-4 ring-secondary ${
+                                            isCompleted
                                               ? "bg-ink text-cream"
                                               : "bg-border text-muted-foreground"
                                           }`}
                                         >
-                                          {i <= currentStep ? <Check size={12} /> : i + 1}
+                                          {isCompleted ? <Check size={12} strokeWidth={2.5} /> : i + 1}
                                         </div>
-                                        <span className="text-[10px] mt-1 capitalize text-muted-foreground hidden sm:block">
+                                        <span
+                                          className={`text-[10px] mt-2 capitalize tracking-wider font-medium hidden sm:block ${
+                                            isCompleted ? "text-foreground font-semibold" : "text-muted-foreground"
+                                          }`}
+                                        >
                                           {step}
                                         </span>
                                       </div>
-                                      {i < statusSteps.length - 1 && (
-                                        <div
-                                          className={`flex-1 h-px mx-1 ${
-                                            i < currentStep ? "bg-ink" : "bg-border"
-                                          }`}
-                                        />
-                                      )}
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
 
                                 {/* Courier & Live Tracking Card */}
