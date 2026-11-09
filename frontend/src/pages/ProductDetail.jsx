@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { Heart, Star, Truck, ShieldCheck, RotateCcw, ArrowLeft, Ruler, Calendar, Share2, Link2, MessageCircle, Send, Mail, Check, ArrowUpRight } from "lucide-react";
+import { Heart, Truck, ShieldCheck, RotateCcw, ArrowLeft, Ruler, Calendar, Share2, Link2, MessageCircle, Send, Mail, Check, ArrowUpRight } from "lucide-react";
 import { useCart } from "@/context/CartContext";
-import { useOrders } from "@/context/OrderContext";
 import SizeGuide from "@/components/SizeGuide";
 import ImageZoom from "@/components/ImageZoom";
 import { allProducts, colorMap, parsePrice } from "@/data/products";
@@ -167,7 +166,6 @@ export default function ProductDetail() {
   const { name } = useParams();
   const navigate = useNavigate();
   const { addToCart, buyNow, toggleWishlist, isWishlisted } = useCart();
-  const { getAverageRating, getReviewsByProduct } = useOrders();
   const { products } = useProducts();
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
@@ -208,8 +206,6 @@ export default function ProductDetail() {
     : null;
   const productImages = colorPhotos
     || (product.images?.length ? product.images : (product.img ? [product.img] : []));
-  const avgRating = getAverageRating(product.id);
-  const reviews = getReviewsByProduct(product.id);
 
   const relatedProducts = products
     .filter((p) => p.category === product.category && p.name !== product.name)
@@ -470,35 +466,6 @@ export default function ProductDetail() {
             <div className="flex items-center gap-2"><Truck className="w-4 h-4 text-crimson shrink-0" /><span className="text-[10px] text-muted-foreground">Free Shipping</span></div>
             <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-crimson shrink-0" /><span className="text-[10px] text-muted-foreground">Secure Payment</span></div>
             <div className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-crimson shrink-0" /><span className="text-[10px] text-muted-foreground">30-Day Returns</span></div>
-          </div>
-
-          {/* Reviews */}
-          <div className="mt-8 pt-8 border-t border-border">
-            <div className="flex items-center gap-2 mb-4">
-              {[...Array(5)].map((_, i) => <Star key={i} className={`w-3.5 h-3.5 ${i < Math.round(avgRating) ? "fill-crimson text-crimson" : "text-muted-foreground"}`} />)}
-              <span className="text-xs text-muted-foreground ml-1">{avgRating.toFixed(1)} ({reviews.length} reviews)</span>
-            </div>
-            {reviews.length > 0 ? (
-              <div className="space-y-4">
-                {reviews.map((r) => (
-                  <div key={r.id} className="border-b border-border pb-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      {[...Array(5)].map((_, i) => <Star key={i} className={`w-2.5 h-2.5 ${i < r.rating ? "fill-crimson text-crimson" : ""}`} />)}
-                      <span className="text-[10px] text-muted-foreground">{r.userName}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{r.comment}</p>
-                    {r.vendorReply && (
-                      <p className="text-[10px] text-foreground mt-2 ml-4 italic">Reply: {r.vendorReply}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                "The most beautiful piece I've ever owned. The silk moves like water."
-                <span className="block mt-1 text-[10px] tracking-wider uppercase">— Isabelle M., Paris</span>
-              </p>
-            )}
           </div>
         </motion.div>
       </div>

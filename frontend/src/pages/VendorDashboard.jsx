@@ -12,6 +12,7 @@ import DispatchModal from "@/components/DispatchModal";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import { authApi } from "@/api/auth";
+import { uploadApi } from "@/api/upload";
 import {
   Package,
   DollarSign,
@@ -95,7 +96,9 @@ const STATUS_COLORS = {
   dispatched: "bg-orange-100 text-orange-800",
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-100 text-emerald-800",
-  returned: "bg-red-100 text-red-800",
+  returned: "bg-emerald-100 text-emerald-800",
+  refund_processing: "bg-amber-100 text-amber-800",
+  return_requested: "bg-amber-100 text-amber-800",
   pending: "bg-yellow-100 text-yellow-800",
   approved: "bg-green-100 text-green-800",
   active: "bg-purple-100 text-purple-800",
@@ -104,59 +107,6 @@ const STATUS_COLORS = {
   processing: "bg-blue-100 text-blue-800",
   cancelled: "bg-gray-100 text-gray-800",
 };
-
-const MOCK_RENTAL_ORDERS = [
-  {
-    id: "RNT-001",
-    customerName: "Sophia Laurent",
-    items: [{ name: "Silk Evening Gown", size: "M", rentalDays: 3 }],
-    rentalStart: "2026-07-20",
-    rentalEnd: "2026-07-23",
-    total: 297,
-    status: "active",
-    deposit: 150,
-    date: "2026-07-18T10:00:00Z",
-  },
-  {
-    id: "RNT-002",
-    customerName: "Marco Rossi",
-    items: [{ name: "Velvet Dinner Jacket", size: "L", rentalDays: 2 }],
-    rentalStart: "2026-07-25",
-    rentalEnd: "2026-07-27",
-    total: 180,
-    status: "approved",
-    deposit: 100,
-    date: "2026-07-22T11:30:00Z",
-  },
-  {
-    id: "RNT-003",
-    customerName: "Ava Chen",
-    items: [{ name: "Tulle Cocktail Dress", size: "S", rentalDays: 1 }],
-    rentalStart: "2026-07-10",
-    rentalEnd: "2026-07-11",
-    total: 85,
-    status: "returned",
-    deposit: 75,
-    date: "2026-07-08T09:00:00Z",
-  },
-];
-
-const MOCK_WITHDRAWALS = [
-  { id: "wd-1", date: "2026-07-20", amount: 3200, status: "completed", method: "Bank Transfer", account: "****4521" },
-  { id: "wd-2", date: "2026-07-05", amount: 2800, status: "completed", method: "Bank Transfer", account: "****4521" },
-  { id: "wd-3", date: "2026-06-20", amount: 4100, status: "completed", method: "PayPal", account: "vendor@atelier.com" },
-  { id: "wd-4", date: "2026-07-25", amount: 1500, status: "processing", method: "Bank Transfer", account: "****4521" },
-];
-
-const MONTHLY_EARNINGS = [
-  { month: "Jan", sales: 12400, rental: 2800, commission: 2280 },
-  { month: "Feb", sales: 14200, rental: 3100, commission: 2595 },
-  { month: "Mar", sales: 11800, rental: 2400, commission: 2130 },
-  { month: "Apr", sales: 16500, rental: 4200, commission: 3105 },
-  { month: "May", sales: 18900, rental: 5100, commission: 3600 },
-  { month: "Jun", sales: 21200, rental: 6300, commission: 4125 },
-  { month: "Jul", sales: 15800, rental: 4800, commission: 3090 },
-];
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -267,9 +217,6 @@ export default function VendorDashboard() {
     getOrdersByVendor,
     updateOrderStatus,
     inventory,
-    reviews,
-    getReviewsByProduct,
-    replyToReview,
     vendorApiOrders,
     vendorOrdersLoading,
     fetchVendorOrders,
@@ -277,6 +224,7 @@ export default function VendorDashboard() {
     updateRentalStatusApi,
     rentalStatusSteps,
     confirmReturn,
+    completeRefund,
     inspectOrder,
     isSameOrder,
   } = useOrders();
@@ -291,7 +239,22 @@ export default function VendorDashboard() {
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const [withdrawalMethod, setWithdrawalMethod] = useState("bank");
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
-  const [withdrawals, setWithdrawals] = useState(MOCK_WITHDRAWALS);
+  const [withdrawals, setWithdrawals] = useState(() => {
+    try {
+      const key = `ef_withdrawals_${currentUser?.id || "default"}`;
+      const cached = localStorage.getItem(key);
+      return cached ? JSON.parse(cached) : [];
+    } catch (_e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    try {
+      localStorage.setItem(`ef_withdrawals_${currentUser.id}`, JSON.stringify(withdrawals));
+    } catch (_e) {}
+  }, [withdrawals, currentUser?.id]);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -308,6 +271,7 @@ export default function VendorDashboard() {
   const [inventoryFilter, setInventoryFilter] = useState("all");
   const [productSearch, setProductSearch] = useState("");
   const [productTab, setProductTab] = useState("all");
+  const [rentalTab, setRentalTab] = useState("all");
   const [earningsPeriod, setEarningsPeriod] = useState("7months");
 
   const [newProductForm, setNewProductForm] = useState(false);
@@ -352,9 +316,18 @@ export default function VendorDashboard() {
     )).catch(() => setVendorProductsList(allProducts.map((product) => ({ ...product, stock: product.stock || {} }))));
   }, [currentUser?.id]);
 
-  const handleAdImage = (file) => {
+  const handleAdImage = async (file) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) return alert("Please select an image file.");
+    try {
+      const res = await uploadApi.uploadImage(file);
+      if (res?.url) {
+        setAdForm((prev) => ({ ...prev, image: res.url }));
+        return;
+      }
+    } catch {
+      // Fallback to FileReader if server upload fails
+    }
     const reader = new FileReader();
     reader.onload = () => setAdForm((prev) => ({ ...prev, image: reader.result }));
     reader.readAsDataURL(file);
@@ -385,22 +358,30 @@ export default function VendorDashboard() {
     try {
       if (editingAdId) {
         const saved = await adsApi.update(editingAdId, adForm);
-        setVendorAds((prev) => prev.map((item) => item.id === editingAdId ? { ...saved, id: saved._id } : item));
+        setVendorAds((prev) => prev.map((item) => item.id === editingAdId ? { ...saved, id: saved._id || saved.id } : item));
       } else {
         const saved = await adsApi.create(adForm);
-        setVendorAds((prev) => [{ ...saved, id: saved._id }, ...prev]);
+        setVendorAds((prev) => [{ ...saved, id: saved._id || saved.id }, ...prev]);
       }
       closeAdForm();
     } catch (error) { alert(error.message || "Could not save advertisement."); }
   };
   const updateVendorAd = async (ad) => {
-    try { const saved = await adsApi.update(ad.id, { active: !ad.active }); setVendorAds((prev) => prev.map((item) => item.id === ad.id ? { ...saved, id: saved._id } : item)); }
-    catch { alert("Could not update this advertisement."); }
+    try {
+      const saved = await adsApi.update(ad.id, { active: !ad.active });
+      setVendorAds((prev) => prev.map((item) => item.id === ad.id ? { ...saved, id: saved._id || saved.id } : item));
+    } catch (err) {
+      alert(err.message || "Could not update this advertisement.");
+    }
   };
   const removeVendorAd = async (id) => {
     if (!window.confirm("Delete this advertisement?")) return;
-    try { await adsApi.remove(id); setVendorAds((prev) => prev.filter((ad) => ad.id !== id)); }
-    catch { alert("Could not delete this advertisement."); }
+    try {
+      await adsApi.remove(id);
+      setVendorAds((prev) => prev.filter((ad) => ad.id !== id));
+    } catch (err) {
+      alert(err.message || "Could not delete this advertisement.");
+    }
   };
 
   if (!isAuthenticated || !isVendor) {
@@ -495,13 +476,165 @@ export default function VendorDashboard() {
     : rentalOrders.filter((o) => o.status === rentalFilter);
   const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const totalRevenue = vendor.totalEarnings;
   const pendingOrders = normalOrders.filter((o) => o.status !== "delivered" && o.status !== "returned").length;
-  const rentalProducts = vendorProducts.filter((p) => p.rentalAvailable);
+  const allRentalProductsList = useMemo(() => vendorProducts.filter((p) => p.rentalAvailable), [vendorProducts]);
+  const myRentalProductsList = useMemo(() => allRentalProductsList.filter(isMyProduct), [allRentalProductsList, isMyProduct]);
+  const activeRentalProductsList = rentalTab === "my" ? myRentalProductsList : allRentalProductsList;
+  const rentalProducts = activeRentalProductsList;
 
-  const totalSalesThisMonth = MONTHLY_EARNINGS[MONTHLY_EARNINGS.length - 1].sales;
-  const totalRentalThisMonth = MONTHLY_EARNINGS[MONTHLY_EARNINGS.length - 1].rental;
-  const totalCommissionThisMonth = MONTHLY_EARNINGS[MONTHLY_EARNINGS.length - 1].commission;
+  const isItemForVendor = useCallback((item) => {
+    if (!item) return false;
+    const currentId = currentUser?.id;
+    const vendorId = vendor?.id;
+    if (item.vendorId && (item.vendorId === currentId || item.vendorId === vendorId)) {
+      return true;
+    }
+    const storeName = (vendor?.storeName || currentUser?.vendorStore?.name || "").trim().toLowerCase();
+    if (item.vendor && storeName && item.vendor.trim().toLowerCase() === storeName) {
+      return true;
+    }
+    if (item.productId) {
+      const prod = vendorProductsList.find((p) => p.id === item.productId || p._id === item.productId || p.slug === item.productId);
+      if (prod && isMyProduct(prod)) {
+        return true;
+      }
+    }
+    const isAtelierParis = currentId === "vendor-1" || vendorId === "vendor-1" || storeName === "atelier paris";
+    if (isAtelierParis && (item.vendorId === "vendor-1" || item.vendorId === "ef-main" || !item.vendorId)) {
+      return true;
+    }
+    return false;
+  }, [currentUser?.id, vendor?.id, vendor?.storeName, currentUser?.vendorStore?.name, vendorProductsList, isMyProduct]);
+
+  const getVendorItemsForOrder = useCallback((order) => {
+    if (!order || !order.items) return [];
+    const matched = order.items.filter(isItemForVendor);
+    if (matched.length > 0) return matched;
+    if (order.vendorId && (order.vendorId === vendor?.id || order.vendorId === currentUser?.id)) {
+      return order.items;
+    }
+    return [];
+  }, [isItemForVendor, vendor?.id, currentUser?.id]);
+
+  const allTimeEarnings = useMemo(() => {
+    let sales = 0;
+    let rental = 0;
+    let orderCount = 0;
+    const rate = Number(vendor?.commission) || 15;
+
+    vendorOrders.forEach((o) => {
+      if (o.status === "cancelled" || o.rentalStatus === "cancelled") return;
+      const vItems = getVendorItemsForOrder(o);
+      if (vItems.length > 0) {
+        orderCount += 1;
+        vItems.forEach((item) => {
+          const qty = Number(item.quantity) || 1;
+          const price = Number(item.price) || 0;
+          const totalItemPrice = price * qty;
+          const isRental = Boolean(item.isRental || o.rentalDetails);
+          if (isRental) {
+            rental += totalItemPrice;
+          } else {
+            sales += totalItemPrice;
+          }
+        });
+      }
+    });
+
+    const gross = sales + rental;
+    const commission = Math.round(gross * (rate / 100));
+    const net = gross - commission;
+
+    return { sales, rental, gross, commission, net, orderCount };
+  }, [vendorOrders, vendor?.commission, getVendorItemsForOrder]);
+
+  const monthlyEarningsData = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    const rate = Number(vendor?.commission) || 15;
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthIdx = d.getMonth();
+      const monthShort = d.toLocaleString("en-US", { month: "short" });
+      const fullLabel = `${monthShort} ${year}`;
+
+      let sales = 0;
+      let rental = 0;
+
+      vendorOrders.forEach((o) => {
+        if (o.status === "cancelled" || o.rentalStatus === "cancelled") return;
+        const oDate = new Date(o.date || o.createdAt || 0);
+        if (isNaN(oDate.getTime())) return;
+        if (oDate.getFullYear() === year && oDate.getMonth() === monthIdx) {
+          const vItems = getVendorItemsForOrder(o);
+          vItems.forEach((item) => {
+            const qty = Number(item.quantity) || 1;
+            const price = Number(item.price) || 0;
+            const totalItemPrice = price * qty;
+            const isRental = Boolean(item.isRental || o.rentalDetails);
+            if (isRental) {
+              rental += totalItemPrice;
+            } else {
+              sales += totalItemPrice;
+            }
+          });
+        }
+      });
+
+      const total = sales + rental;
+      const commission = Math.round(total * (rate / 100));
+      const net = total - commission;
+
+      months.push({
+        month: monthShort,
+        year,
+        fullLabel,
+        sales,
+        rental,
+        total,
+        commission,
+        net,
+      });
+    }
+
+    return months;
+  }, [vendorOrders, vendor?.commission, getVendorItemsForOrder]);
+
+  const thisMonthData = monthlyEarningsData[monthlyEarningsData.length - 1] || { sales: 0, rental: 0, total: 0, commission: 0, net: 0 };
+  const prevMonthData = monthlyEarningsData[monthlyEarningsData.length - 2] || { sales: 0, rental: 0, total: 0, commission: 0, net: 0 };
+
+  const totalSalesThisMonth = thisMonthData.sales;
+  const totalRentalThisMonth = thisMonthData.rental;
+  const totalCommissionThisMonth = thisMonthData.commission;
+  const totalNetThisMonth = thisMonthData.net;
+
+  const totalSalesAllTime = allTimeEarnings.sales;
+  const totalRentalAllTime = allTimeEarnings.rental;
+  const totalNetAllTime = allTimeEarnings.net;
+  const totalRevenue = allTimeEarnings.gross;
+
+  const getChangePct = (curr, prev) => {
+    if (prev > 0) return Math.round(((curr - prev) / prev) * 100);
+    if (curr > 0) return 100;
+    return 0;
+  };
+
+  const netMonthChangePct = getChangePct(thisMonthData.net, prevMonthData.net);
+  const grossMonthChangePct = getChangePct(thisMonthData.total, prevMonthData.total);
+
+  const totalCompletedWithdrawn = useMemo(() => {
+    return withdrawals.filter((w) => w.status === "completed").reduce((s, w) => s + (Number(w.amount) || 0), 0);
+  }, [withdrawals]);
+
+  const totalProcessingWithdrawn = useMemo(() => {
+    return withdrawals.filter((w) => w.status === "processing").reduce((s, w) => s + (Number(w.amount) || 0), 0);
+  }, [withdrawals]);
+
+  const availableBalance = useMemo(() => {
+    return Math.max(0, totalNetAllTime - totalCompletedWithdrawn - totalProcessingWithdrawn);
+  }, [totalNetAllTime, totalCompletedWithdrawn, totalProcessingWithdrawn]);
 
   const initProfile = () => {
     if (!profileForm.firstName) {
@@ -580,14 +713,22 @@ export default function VendorDashboard() {
     e.preventDefault();
     const amount = parseFloat(withdrawalAmount);
     if (!amount || amount <= 0) return;
-    if (amount > vendor.pendingPayout) return;
+    if (amount > availableBalance) {
+      alert(`Withdrawal amount cannot exceed your available balance of ${parsePrice(availableBalance)}.`);
+      return;
+    }
+    const bankDetails = profileForm.bankAccount || currentUser?.bankAccount;
+    const accountDisplay = withdrawalMethod === "bank"
+      ? (bankDetails ? `Bank (${bankDetails.slice(-4) ? `****${bankDetails.slice(-4)}` : bankDetails})` : "Bank Account")
+      : (currentUser?.email || "PayPal");
+
     const newWithdrawal = {
       id: `wd-${Date.now()}`,
       date: new Date().toISOString().split("T")[0],
       amount,
       status: "processing",
       method: withdrawalMethod === "bank" ? "Bank Transfer" : "PayPal",
-      account: withdrawalMethod === "bank" ? "****4521" : "vendor@atelier.com",
+      account: accountDisplay,
     };
     setWithdrawals((prev) => [newWithdrawal, ...prev]);
     setWithdrawalAmount("");
@@ -682,16 +823,22 @@ export default function VendorDashboard() {
   };
 
   const handleExportReport = () => {
-    const header = "Month,Product Sales,Rental Income,Commission,Net Earnings\n";
-    const rows = MONTHLY_EARNINGS.map((m) =>
-      `${m.month},${m.sales},${m.rental},${m.commission},${m.sales + m.rental - m.commission}`
+    const header = "Month,Product Sales (€),Rental Income (€),Commission (€),Net Earnings (€)\n";
+    const rows = monthlyEarningsData.map((m) =>
+      `"${m.fullLabel}",${m.sales},${m.rental},${m.commission},${m.net}`
     ).join("\n");
-    const csv = header + rows;
-    const blob = new Blob([csv], { type: "text/csv" });
+    const totalSales = monthlyEarningsData.reduce((s, m) => s + m.sales, 0);
+    const totalRental = monthlyEarningsData.reduce((s, m) => s + m.rental, 0);
+    const totalCommission = monthlyEarningsData.reduce((s, m) => s + m.commission, 0);
+    const totalNet = monthlyEarningsData.reduce((s, m) => s + m.net, 0);
+    const summaryRow = `"Total",${totalSales},${totalRental},${totalCommission},${totalNet}`;
+    const csv = header + rows + "\n" + summaryRow;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `earnings-report-${new Date().toISOString().split("T")[0]}.csv`;
+    const storeSlug = (vendor.storeName || "vendor").toLowerCase().replace(/[^a-z0-9]/g, "-");
+    a.download = `earnings-report-${storeSlug}-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -784,16 +931,16 @@ export default function VendorDashboard() {
   const renderOverview = () => (
     <div className="space-y-10">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        <StatCard icon={TrendingUp} label="Total Sales" value={vendor.totalSales.toLocaleString()} change={12} changeType="up" index={0} />
-        <StatCard icon={DollarSign} label="Revenue" value={parsePrice(totalRevenue)} change={8} changeType="up" index={1} />
+        <StatCard icon={TrendingUp} label="Total Orders" value={allTimeEarnings.orderCount.toLocaleString()} index={0} />
+        <StatCard icon={DollarSign} label="Gross Revenue" value={parsePrice(allTimeEarnings.gross)} index={1} />
         <StatCard icon={Clock} label="Pending Orders" value={pendingOrders} index={2} />
-        <StatCard icon={Package} label="Active Products" value={vendorProducts.length} index={3} />
+        <StatCard icon={Package} label="My Products" value={myProductsList.length} index={3} />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        <StatCard icon={Repeat} label="Rental Items" value={rentalProducts.length} index={4} />
-        <StatCard icon={Banknote} label="Pending Payout" value={parsePrice(vendor.pendingPayout)} index={6} />
-        <StatCard icon={Star} label="Avg Rating" value="4.8" index={7} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+        <StatCard icon={Repeat} label="My Rental Items" value={myRentalProductsList.length} index={4} />
+        <StatCard icon={Banknote} label="Available Balance" value={parsePrice(availableBalance)} index={5} />
+        <StatCard icon={Wallet} label="Total Earnings (Net)" value={parsePrice(allTimeEarnings.net)} index={6} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
@@ -843,7 +990,7 @@ export default function VendorDashboard() {
           <div className="bg-secondary border border-border/60 rounded-sm p-6">
             <div className="flex items-end gap-2 mb-6">
               <p className="text-display text-3xl">{parsePrice(totalSalesThisMonth + totalRentalThisMonth)}</p>
-              <span className="text-xs text-emerald-600 mb-1">this month</span>
+              <span className="text-xs text-muted-foreground mb-1">this month</span>
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -852,8 +999,8 @@ export default function VendorDashboard() {
               </div>
               <div className="w-full bg-cream h-2 rounded-full overflow-hidden">
                 <div
-                  className="bg-ink h-full rounded-full"
-                  style={{ width: `${(totalSalesThisMonth / (totalSalesThisMonth + totalRentalThisMonth)) * 100}%` }}
+                  className="bg-ink h-full rounded-full transition-all"
+                  style={{ width: `${(totalSalesThisMonth + totalRentalThisMonth) > 0 ? (totalSalesThisMonth / (totalSalesThisMonth + totalRentalThisMonth)) * 100 : 0}%` }}
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -862,13 +1009,15 @@ export default function VendorDashboard() {
               </div>
               <div className="w-full bg-cream h-2 rounded-full overflow-hidden">
                 <div
-                  className="bg-crimson h-full rounded-full"
-                  style={{ width: `${(totalRentalThisMonth / (totalSalesThisMonth + totalRentalThisMonth)) * 100}%` }}
+                  className="bg-crimson h-full rounded-full transition-all"
+                  style={{ width: `${(totalSalesThisMonth + totalRentalThisMonth) > 0 ? (totalRentalThisMonth / (totalSalesThisMonth + totalRentalThisMonth)) * 100 : 0}%` }}
                 />
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-border/40">
                 <span className="text-sm text-muted-foreground">Commission ({vendor.commission}%)</span>
-                <span className="text-sm font-medium text-foreground">-{parsePrice(totalCommissionThisMonth)}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {totalCommissionThisMonth > 0 ? `-${parsePrice(totalCommissionThisMonth)}` : parsePrice(0)}
+                </span>
               </div>
             </div>
           </div>
@@ -1179,13 +1328,53 @@ export default function VendorDashboard() {
   const renderRentals = () => (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="eyebrow">Rental Listings</h2>
+        <div>
+          <p className="eyebrow">Catalogue</p>
+          <h2 className="font-serif text-2xl text-foreground mt-1">Rental Listings</h2>
+        </div>
         <button
           onClick={handleAddRental}
           className="btn-ink px-5 py-2.5 text-xs tracking-widest uppercase flex items-center gap-2"
         >
           <Plus size={14} />
           {newRentalForm ? "Close Form" : "Add Rental Item"}
+        </button>
+      </div>
+
+      {/* Rental Sub-Tabs: Tab 1: All Rentals | Tab 2: My Rentals */}
+      <div className="flex border-b border-border/80 gap-2">
+        <button
+          type="button"
+          onClick={() => setRentalTab("all")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            rentalTab === "all"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          All Rentals
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            rentalTab === "all" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {allRentalProductsList.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRentalTab("my")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            rentalTab === "my"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          My Rentals
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            rentalTab === "my" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {myRentalProductsList.length}
+          </span>
         </button>
       </div>
 
@@ -1210,8 +1399,12 @@ export default function VendorDashboard() {
       {rentalProducts.length === 0 ? (
         <EmptyState
           icon={Repeat}
-          title="No Rental Listings"
-          description="Add rental availability to your products to start earning from rentals."
+          title={rentalTab === "my" ? "No Rental Items Added Yet" : "No Rental Listings"}
+          description={
+            rentalTab === "my"
+              ? "You haven't listed any of your products for rental yet. Click 'Add Rental Item' to add one."
+              : "No rental items are currently available in the catalogue."
+          }
           action="Add Rental Item"
           onAction={handleAddRental}
         />
@@ -1546,11 +1739,12 @@ export default function VendorDashboard() {
                           <div className="px-6 pb-4">
                             <OrderDetailPanel order={order} showCustomer={true} />
                             {/* Status Controls / Return Flow */}
-                            {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
+                            {order.status === "return_requested" || order.status === "refund_processing" || order.status === "returned" || order.returnRequested ? (
                               <div className="mt-4 pt-4 border-t border-border">
                                 <ReturnStatusTracker
                                   order={order}
                                   onConfirmReturn={confirmReturn}
+                                  onCompleteRefund={completeRefund}
                                   isVendorOrAdmin={true}
                                 />
                               </div>
@@ -1566,28 +1760,41 @@ export default function VendorDashboard() {
                                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
                                   Update Status:
                                 </span>
-                                {["confirmed", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => (
-                                  <button
-                                    key={status}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (status === "dispatched") {
-                                        setDispatchModalOrder(order);
-                                        return;
-                                      }
-                                      updateOrderStatusApi(order.id, status);
-                                      setExpandedVendorOrder(null);
-                                    }}
-                                    disabled={order.status === status}
-                                    className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
-                                      order.status === status
-                                        ? "bg-ink/10 text-ink border border-ink/30"
-                                        : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
-                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                                  >
-                                    {status}
-                                  </button>
-                                ))}
+                                {["confirmed", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => {
+                                  const currentIdx = ORDER_STATUS_FLOW.indexOf(order.status);
+                                  const targetIdx = ORDER_STATUS_FLOW.indexOf(status);
+                                  const isPast = targetIdx !== -1 && currentIdx !== -1 && targetIdx < currentIdx;
+                                  const isCurrent = order.status === status;
+                                  const isNext = targetIdx === currentIdx + 1;
+                                  const isCancelDisabled = status === "cancelled" && ["dispatched", "shipped", "delivered"].includes(order.status);
+                                  const isDisabled = isPast || isCurrent || isCancelDisabled;
+
+                                  return (
+                                    <button
+                                      key={status}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (status === "dispatched") {
+                                          setDispatchModalOrder(order);
+                                          return;
+                                        }
+                                        updateOrderStatusApi(order.id, status);
+                                        setExpandedVendorOrder(null);
+                                      }}
+                                      disabled={isDisabled}
+                                      className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                        isCurrent
+                                          ? "bg-ink/10 text-ink border border-ink/30"
+                                          : isPast
+                                          ? "border border-border/40 text-muted-foreground/40 bg-secondary/30"
+                                          : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                      title={isPast ? "Status already passed (cannot go back)" : isCurrent ? "Current status" : `Update to ${status}`}
+                                    >
+                                      {status}
+                                    </button>
+                                  );
+                                })}
                                 {order.status === "dispatched" && (
                                   <button
                                     type="button"
@@ -1980,17 +2187,22 @@ export default function VendorDashboard() {
   };
 
   const renderEarnings = () => {
-    const maxEarning = Math.max(...MONTHLY_EARNINGS.map((m) => m.sales + m.rental));
+    const maxEarning = Math.max(...monthlyEarningsData.map((m) => m.sales + m.rental), 0);
 
     return (
       <div className="space-y-10">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-secondary border border-border/60 rounded-sm p-6">
             <p className="eyebrow mb-3">Total Earnings</p>
-            <p className="text-display text-3xl">{parsePrice(vendor.totalEarnings)}</p>
-            <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1">
-              <ArrowUpRight size={12} /> +8% from last month
-            </p>
+            <p className="text-display text-3xl">{parsePrice(totalNetAllTime)}</p>
+            {grossMonthChangePct !== 0 ? (
+              <p className={`text-xs mt-2 flex items-center gap-1 ${grossMonthChangePct > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {grossMonthChangePct > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                {grossMonthChangePct > 0 ? `+${grossMonthChangePct}%` : `${grossMonthChangePct}%`} from last month
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">All-time net earnings</p>
+            )}
           </div>
           <div className="bg-secondary border border-border/60 rounded-sm p-6">
             <p className="eyebrow mb-3">This Month</p>
@@ -2004,12 +2216,15 @@ export default function VendorDashboard() {
           </div>
           <div className="bg-secondary border border-border/60 rounded-sm p-6">
             <p className="eyebrow mb-3">Net Earnings (Month)</p>
-            <p className="text-display text-3xl">
-              {parsePrice(totalSalesThisMonth + totalRentalThisMonth - totalCommissionThisMonth)}
-            </p>
-            <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1">
-              <ArrowUpRight size={12} /> +12% from last month
-            </p>
+            <p className="text-display text-3xl">{parsePrice(totalNetThisMonth)}</p>
+            {netMonthChangePct !== 0 ? (
+              <p className={`text-xs mt-2 flex items-center gap-1 ${netMonthChangePct > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {netMonthChangePct > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                {netMonthChangePct > 0 ? `+${netMonthChangePct}%` : `${netMonthChangePct}%`} from last month
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">After platform commission</p>
+            )}
           </div>
         </div>
 
@@ -2026,26 +2241,41 @@ export default function VendorDashboard() {
           </div>
           <div className="bg-secondary border border-border/60 rounded-sm p-6">
             <div className="flex items-end gap-6 h-64 mb-4">
-              {MONTHLY_EARNINGS.map((month, i) => (
-                <div key={month.month} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                  <div className="w-full flex flex-col gap-0.5" style={{ height: `${((month.sales + month.rental) / maxEarning) * 100}%` }}>
-                    <div
-                      className="w-full bg-ink rounded-t-sm"
-                      style={{ height: `${(month.sales / (month.sales + month.rental)) * 100}%` }}
-                      title={`Sales: ${parsePrice(month.sales)}`}
-                    />
-                    <div
-                      className="w-full bg-crimson rounded-b-sm"
-                      style={{ height: `${(month.rental / (month.sales + month.rental)) * 100}%` }}
-                      title={`Rentals: ${parsePrice(month.rental)}`}
-                    />
+              {monthlyEarningsData.map((month) => {
+                const monthTotal = month.sales + month.rental;
+                const barHeightPct = maxEarning > 0 ? (monthTotal / maxEarning) * 100 : 0;
+                const salesShare = monthTotal > 0 ? (month.sales / monthTotal) * 100 : 0;
+                const rentalShare = monthTotal > 0 ? (month.rental / monthTotal) * 100 : 0;
+
+                return (
+                  <div key={month.fullLabel} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                    {monthTotal > 0 ? (
+                      <div className="w-full flex flex-col gap-0.5" style={{ height: `${barHeightPct}%` }}>
+                        {month.sales > 0 && (
+                          <div
+                            className="w-full bg-ink rounded-t-sm transition-all"
+                            style={{ height: `${salesShare}%` }}
+                            title={`Sales: ${parsePrice(month.sales)}`}
+                          />
+                        )}
+                        {month.rental > 0 && (
+                          <div
+                            className="w-full bg-crimson rounded-b-sm transition-all"
+                            style={{ height: `${rentalShare}%` }}
+                            title={`Rentals: ${parsePrice(month.rental)}`}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full h-[2px] bg-border/60 rounded-full" title={`${month.fullLabel}: ${parsePrice(0)}`} />
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
-              {MONTHLY_EARNINGS.map((m) => (
-                <span key={m.month} className="flex-1 text-center">{m.month}</span>
+              {monthlyEarningsData.map((m) => (
+                <span key={m.fullLabel} className="flex-1 text-center truncate px-1">{m.month}</span>
               ))}
             </div>
             <div className="flex items-center justify-center gap-6 mt-6 pt-4 border-t border-border/40">
@@ -2058,6 +2288,11 @@ export default function VendorDashboard() {
                 <span className="text-xs text-muted-foreground">Rental Income</span>
               </div>
             </div>
+            {maxEarning === 0 && (
+              <p className="text-xs text-muted-foreground text-center mt-3">
+                No revenue recorded yet for the past 7 months.
+              </p>
+            )}
           </div>
         </div>
 
@@ -2076,34 +2311,36 @@ export default function VendorDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {MONTHLY_EARNINGS.map((month) => (
-                    <tr key={month.month} className="border-b border-border/30 hover:bg-cream/30 transition-colors">
-                      <td className="py-3 px-4 font-medium text-foreground">{month.month} 2026</td>
+                  {monthlyEarningsData.map((month) => (
+                    <tr key={month.fullLabel} className="border-b border-border/30 hover:bg-cream/30 transition-colors">
+                      <td className="py-3 px-4 font-medium text-foreground">{month.fullLabel}</td>
                       <td className="py-3 px-4 text-right text-foreground">{parsePrice(month.sales)}</td>
                       <td className="py-3 px-4 text-right text-foreground">{parsePrice(month.rental)}</td>
-                      <td className="py-3 px-4 text-right text-crimson">-{parsePrice(month.commission)}</td>
+                      <td className="py-3 px-4 text-right text-crimson">
+                        {month.commission > 0 ? `-${parsePrice(month.commission)}` : parsePrice(0)}
+                      </td>
                       <td className="py-3 px-4 text-right font-medium text-foreground">
-                        {parsePrice(month.sales + month.rental - month.commission)}
+                        {parsePrice(month.net)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-border/60 font-medium">
-                    <td className="py-3 px-4 text-foreground">Total</td>
+                    <td className="py-3 px-4 text-foreground">Total (Last 7 Months)</td>
                     <td className="py-3 px-4 text-right text-foreground">
-                      {parsePrice(MONTHLY_EARNINGS.reduce((s, m) => s + m.sales, 0))}
+                      {parsePrice(monthlyEarningsData.reduce((s, m) => s + m.sales, 0))}
                     </td>
                     <td className="py-3 px-4 text-right text-foreground">
-                      {parsePrice(MONTHLY_EARNINGS.reduce((s, m) => s + m.rental, 0))}
+                      {parsePrice(monthlyEarningsData.reduce((s, m) => s + m.rental, 0))}
                     </td>
                     <td className="py-3 px-4 text-right text-crimson">
-                      -{parsePrice(MONTHLY_EARNINGS.reduce((s, m) => s + m.commission, 0))}
+                      {monthlyEarningsData.reduce((s, m) => s + m.commission, 0) > 0
+                        ? `-${parsePrice(monthlyEarningsData.reduce((s, m) => s + m.commission, 0))}`
+                        : parsePrice(0)}
                     </td>
                     <td className="py-3 px-4 text-right text-foreground">
-                      {parsePrice(
-                        MONTHLY_EARNINGS.reduce((s, m) => s + m.sales + m.rental - m.commission, 0)
-                      )}
+                      {parsePrice(monthlyEarningsData.reduce((s, m) => s + m.net, 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -2120,19 +2357,15 @@ export default function VendorDashboard() {
       <div className="grid sm:grid-cols-3 gap-6">
         <div className="bg-secondary border border-border/60 rounded-sm p-6">
           <p className="eyebrow mb-3">Available Balance</p>
-          <p className="text-display text-3xl">{parsePrice(vendor.pendingPayout)}</p>
+          <p className="text-display text-3xl">{parsePrice(availableBalance)}</p>
         </div>
         <div className="bg-secondary border border-border/60 rounded-sm p-6">
           <p className="eyebrow mb-3">Total Withdrawn</p>
-          <p className="text-display text-3xl">
-            {parsePrice(withdrawals.filter((w) => w.status === "completed").reduce((s, w) => s + w.amount, 0))}
-          </p>
+          <p className="text-display text-3xl">{parsePrice(totalCompletedWithdrawn)}</p>
         </div>
         <div className="bg-secondary border border-border/60 rounded-sm p-6">
           <p className="eyebrow mb-3">Processing</p>
-          <p className="text-display text-3xl">
-            {parsePrice(withdrawals.filter((w) => w.status === "processing").reduce((s, w) => s + w.amount, 0))}
-          </p>
+          <p className="text-display text-3xl">{parsePrice(totalProcessingWithdrawn)}</p>
         </div>
       </div>
 
@@ -2163,14 +2396,14 @@ export default function VendorDashboard() {
                     <input
                       type="number"
                       min={1}
-                      max={vendor.pendingPayout}
+                      max={availableBalance}
                       value={withdrawalAmount}
                       onChange={(e) => setWithdrawalAmount(e.target.value)}
                       className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
                       placeholder="0.00"
                       required
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Max: {parsePrice(vendor.pendingPayout)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Max: {parsePrice(availableBalance)}</p>
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-2">Method</label>
@@ -2179,8 +2412,8 @@ export default function VendorDashboard() {
                       onChange={(e) => setWithdrawalMethod(e.target.value)}
                       className="w-full bg-cream border border-border/60 rounded-sm px-4 py-3 text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-ink/30"
                     >
-                      <option value="bank">Bank Transfer (****4521)</option>
-                      <option value="paypal">PayPal (vendor@atelier.com)</option>
+                      <option value="bank">Bank Transfer {profileForm.bankAccount || currentUser?.bankAccount ? `(****${(profileForm.bankAccount || currentUser?.bankAccount).slice(-4)})` : ""}</option>
+                      <option value="paypal">PayPal ({currentUser?.email || "Account Email"})</option>
                     </select>
                   </div>
                 </div>
@@ -2218,24 +2451,32 @@ export default function VendorDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {withdrawals.map((w) => (
-                  <tr key={w.id} className="border-b border-border/30">
-                    <td className="py-3 px-4 text-foreground">
-                      {new Date(w.date).toLocaleDateString("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{w.id}</td>
-                    <td className="py-3 px-4 text-foreground">{w.method}</td>
-                    <td className="py-3 px-4 text-muted-foreground text-xs">{w.account}</td>
-                    <td className="py-3 px-4 text-right font-medium text-foreground">{parsePrice(w.amount)}</td>
-                    <td className="py-3 px-4 text-center">
-                      <StatusBadge status={w.status} />
+                {withdrawals.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground text-sm">
+                      No withdrawal requests yet.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  withdrawals.map((w) => (
+                    <tr key={w.id} className="border-b border-border/30">
+                      <td className="py-3 px-4 text-foreground">
+                        {new Date(w.date).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{w.id}</td>
+                      <td className="py-3 px-4 text-foreground">{w.method}</td>
+                      <td className="py-3 px-4 text-muted-foreground text-xs">{w.account}</td>
+                      <td className="py-3 px-4 text-right font-medium text-foreground">{parsePrice(w.amount)}</td>
+                      <td className="py-3 px-4 text-center">
+                        <StatusBadge status={w.status} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -2429,21 +2670,230 @@ export default function VendorDashboard() {
 
   const renderAds = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Promotion tools</p><h2 className="font-serif text-2xl text-foreground mt-1">Your advertisements</h2></div><button onClick={() => (showAdForm ? closeAdForm() : setShowAdForm(true))} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest"><Plus size={14} /> New Ad</button></div>
-      {showAdForm && <div className="bg-cream border border-border p-6 space-y-4">
-        <div className="flex items-center justify-between"><p className="eyebrow">{editingAdId ? "— Edit Advertisement" : "— New Advertisement"}</p><button onClick={closeAdForm} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" title="Close"><X size={16} /></button></div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <input value={adForm.title} onChange={(e) => setAdForm((form) => ({ ...form, title: e.target.value }))} placeholder="Advertisement title (required)" className="px-4 py-3 bg-background border border-border text-sm" />
-          <input value={adForm.subtitle} onChange={(e) => setAdForm((form) => ({ ...form, subtitle: e.target.value }))} placeholder="Offer subtitle (optional)" className="px-4 py-3 bg-background border border-border text-sm" />
-          <select value={adForm.type} onChange={(e) => setAdForm((form) => ({ ...form, type: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="slide">Homepage Slide</option><option value="banner">Banner</option><option value="sidebar">Sidebar</option></select>
-          <select value={adForm.position} onChange={(e) => setAdForm((form) => ({ ...form, position: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm"><option value="homepage-top">Homepage Top</option><option value="homepage-bottom">Homepage Bottom</option><option value="category-page">Category Page</option><option value="product-page">Product Page</option></select>
-          <input type="file" accept="image/*" onChange={(e) => handleAdImage(e.target.files?.[0])} className="px-3 py-2 bg-background border border-border text-sm" />
-          <input value={adForm.buttonText} onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))} placeholder="Button text" className="px-4 py-3 bg-background border border-border text-sm" />
-          <input value={adForm.link} onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))} placeholder="/collection" className="px-4 py-3 bg-background border border-border text-sm" />
-          <input type="date" value={adForm.startDate} onChange={(e) => setAdForm((form) => ({ ...form, startDate: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm" />
-          <input type="date" value={adForm.endDate} onChange={(e) => setAdForm((form) => ({ ...form, endDate: e.target.value }))} className="px-4 py-3 bg-background border border-border text-sm" />
-        </div>{adForm.image && <img src={adForm.image} alt="Advertisement preview" className="h-36 w-56 object-cover border border-border" />}<div className="flex gap-3"><button onClick={submitAd} disabled={!adForm.title.trim() || !adForm.image} className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40">{editingAdId ? "Save Changes" : "Create Ad"}</button><button onClick={closeAdForm} className="px-5 py-2.5 border border-border text-xs uppercase tracking-widest">Cancel</button></div></div>}
-      <div className="grid gap-4">{vendorAds.map((ad) => { const ownedByVendor = ad.vendorId === currentUser.id; return <div key={ad.id} className="bg-cream border border-border p-4 flex flex-col sm:flex-row gap-4 sm:items-center"><div className="w-full sm:w-36 h-24 bg-secondary flex-shrink-0">{ad.image ? <img src={ad.image} alt="" className="w-full h-full object-cover" /> : <div className="h-full grid place-items-center text-muted-foreground"><Image size={20} /></div>}</div><div className="flex-1"><h3 className="font-serif text-lg">{ad.title}</h3><p className="text-sm text-muted-foreground">{ad.subtitle || "No subtitle"} · {ad.type}</p><p className="text-[10px] uppercase tracking-wider mt-2 text-muted-foreground">{ownedByVendor ? "Your campaign" : "Admin campaign"}</p></div>{<div className="flex gap-2"><button onClick={() => startEditAd(ad)} className="px-3 py-2 border border-border text-xs uppercase inline-flex items-center gap-1.5"><Edit2 size={14} /> Edit</button><button onClick={() => updateVendorAd(ad)} className="px-3 py-2 border border-border text-xs uppercase">{ad.active ? "Pause" : "Activate"}</button><button onClick={() => removeVendorAd(ad.id)} className="p-2 text-crimson hover:bg-crimson/10"><Trash2 size={16} /></button></div>}</div>; })}{vendorAds.length === 0 && <div className="border border-dashed border-border p-10 text-center text-muted-foreground">No advertisements yet. Add a slide to feature your store on the homepage.</div>}</div>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="eyebrow">Promotion tools</p>
+          <h2 className="font-serif text-2xl text-foreground mt-1">Your advertisements</h2>
+        </div>
+        <button
+          onClick={() => (showAdForm ? closeAdForm() : setShowAdForm(true))}
+          className="btn-ink px-5 py-2.5 text-xs uppercase tracking-widest flex items-center gap-2"
+        >
+          <Plus size={14} /> New Ad
+        </button>
+      </div>
+
+      {showAdForm && (
+        <div className="bg-cream border border-border p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="eyebrow">{editingAdId ? "— Edit Advertisement" : "— New Advertisement"}</p>
+            <button onClick={closeAdForm} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" title="Close">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Ad Title <span className="text-crimson">*</span></label>
+              <input
+                value={adForm.title}
+                onChange={(e) => setAdForm((form) => ({ ...form, title: e.target.value }))}
+                placeholder="e.g. Winter Atelier Sale"
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Offer Subtitle (Optional)</label>
+              <input
+                value={adForm.subtitle}
+                onChange={(e) => setAdForm((form) => ({ ...form, subtitle: e.target.value }))}
+                placeholder="e.g. Up to 40% Off on Selected Styles"
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Ad Format</label>
+              <select
+                value={adForm.type}
+                onChange={(e) => setAdForm((form) => ({ ...form, type: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              >
+                <option value="slide">Homepage Slide</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Placement Position</label>
+              <select
+                value={adForm.position}
+                onChange={(e) => setAdForm((form) => ({ ...form, position: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              >
+                <option value="homepage-top">Homepage Slider</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Ad Image <span className="text-crimson">*</span></label>
+              <div className="flex gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleAdImage(e.target.files?.[0])}
+                  className="w-full px-3 py-2 bg-background border border-border text-xs"
+                />
+              </div>
+              <input
+                type="text"
+                value={adForm.image}
+                onChange={(e) => setAdForm((form) => ({ ...form, image: e.target.value }))}
+                placeholder="Or paste image URL (e.g. /assets/dress-hero.png)"
+                className="w-full px-3 py-2 mt-2 bg-background border border-border text-xs focus:outline-none focus:border-ink/40"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Button Call to Action</label>
+              <input
+                value={adForm.buttonText}
+                onChange={(e) => setAdForm((form) => ({ ...form, buttonText: e.target.value }))}
+                placeholder="e.g. Shop Now"
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              />
+              <div className="mt-2">
+                <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Target Link</label>
+                <input
+                  value={adForm.link}
+                  onChange={(e) => setAdForm((form) => ({ ...form, link: e.target.value }))}
+                  placeholder="/collection"
+                  className="w-full px-4 py-2 bg-background border border-border text-xs focus:outline-none focus:border-ink/40"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">Start Date (Optional)</label>
+              <input
+                type="date"
+                value={adForm.startDate}
+                onChange={(e) => setAdForm((form) => ({ ...form, startDate: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1">End Date (Optional)</label>
+              <input
+                type="date"
+                value={adForm.endDate}
+                onChange={(e) => setAdForm((form) => ({ ...form, endDate: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-background border border-border text-sm focus:outline-none focus:border-ink/40"
+              />
+            </div>
+          </div>
+
+          {adForm.image && (
+            <div className="pt-2">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Image Preview</p>
+              <img src={adForm.image} alt="Advertisement preview" className="h-32 w-56 object-cover border border-border rounded-sm shadow-sm" />
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={submitAd}
+              disabled={!adForm.title.trim() || !adForm.image}
+              className="btn-ink px-6 py-2.5 text-xs uppercase tracking-widest disabled:opacity-40 transition-opacity"
+            >
+              {editingAdId ? "Save Changes" : "Create Ad"}
+            </button>
+            <button
+              onClick={closeAdForm}
+              className="px-6 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4">
+        {vendorAds.map((ad) => {
+          const ownedByVendor = ad.vendorId === currentUser.id;
+          return (
+            <div key={ad.id} className="bg-cream border border-border p-5 flex flex-col sm:flex-row gap-5 sm:items-center">
+              <div className="w-full sm:w-40 h-28 bg-secondary flex-shrink-0 border border-border/50 overflow-hidden rounded-sm">
+                {ad.image ? (
+                  <img src={ad.image} alt={ad.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="h-full grid place-items-center text-muted-foreground">
+                    <Image size={22} />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-serif text-lg text-foreground font-medium">{ad.title}</h3>
+                  <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium ${
+                    ad.active ? "bg-emerald-100 text-emerald-800" : "bg-neutral-200 text-neutral-600"
+                  }`}>
+                    {ad.active ? "Active" : "Paused"}
+                  </span>
+                </div>
+
+                <p className="text-sm text-muted-foreground line-clamp-1">{ad.subtitle || "No subtitle"} · Homepage Slider</p>
+
+                <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground flex-wrap">
+                  <span className="uppercase tracking-wider font-medium">
+                    {ownedByVendor ? "Your campaign" : "Store-wide campaign"}
+                  </span>
+                  {ad.startDate && <span>• Runs from {ad.startDate} {ad.endDate ? `to ${ad.endDate}` : ""}</span>}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {ownedByVendor ? (
+                  <>
+                    <button
+                      onClick={() => startEditAd(ad)}
+                      className="px-3.5 py-2 border border-border text-xs uppercase inline-flex items-center gap-1.5 hover:bg-secondary transition-colors"
+                    >
+                      <Edit2 size={13} /> Edit
+                    </button>
+                    <button
+                      onClick={() => updateVendorAd(ad)}
+                      className="px-3.5 py-2 border border-border text-xs uppercase hover:bg-secondary transition-colors"
+                    >
+                      {ad.active ? "Pause" : "Activate"}
+                    </button>
+                    <button
+                      onClick={() => removeVendorAd(ad.id)}
+                      className="p-2 text-crimson hover:bg-crimson/10 rounded-sm transition-colors"
+                      title="Delete ad"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground px-3 py-1.5 bg-secondary border border-border/60 rounded-sm">
+                    Admin Managed
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {vendorAds.length === 0 && (
+          <div className="border border-dashed border-border p-12 text-center text-muted-foreground space-y-2">
+            <p className="font-serif text-base text-foreground">No advertisements yet</p>
+            <p className="text-xs">Add a banner or homepage slide to promote your store and products to customers.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 

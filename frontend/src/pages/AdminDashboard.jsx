@@ -75,42 +75,6 @@ const MOCK_CATEGORIES = [
   { id: "cat-8", name: "Menswear", icon: "👔", productCount: 14, active: true },
 ];
 
-const MOCK_ADS = [
-  {
-    id: "ad-1",
-    title: "Summer Collection Banner",
-    type: "banner",
-    position: "homepage-top",
-    active: true,
-    impressions: 12480,
-    clicks: 892,
-    startDate: "2026-06-01",
-    endDate: "2026-08-31",
-  },
-  {
-    id: "ad-2",
-    title: "Rental Launch Sidebar",
-    type: "sidebar",
-    position: "category-page",
-    active: true,
-    impressions: 8920,
-    clicks: 445,
-    startDate: "2026-07-01",
-    endDate: "2026-09-30",
-  },
-  {
-    id: "ad-3",
-    title: "Atelier Paris Popup",
-    type: "popup",
-    position: "product-page",
-    active: false,
-    impressions: 5230,
-    clicks: 187,
-    startDate: "2026-05-15",
-    endDate: "2026-06-30",
-  },
-];
-
 const MONTHLY_DATA = [
   { month: "Jan", revenue: 12400, orders: 48, users: 12, vendors: 1 },
   { month: "Feb", revenue: 14200, orders: 56, users: 18, vendors: 1 },
@@ -135,7 +99,8 @@ const statusColors = {
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-gray-200 text-gray-700",
-  returned: "bg-gray-100 text-gray-800",
+  returned: "bg-emerald-100 text-emerald-800",
+  refund_processing: "bg-amber-100 text-amber-800",
   return_requested: "bg-amber-100 text-amber-800",
   active: "bg-emerald-100 text-emerald-800",
   pending_return: "bg-amber-100 text-amber-800",
@@ -287,9 +252,7 @@ export default function AdminDashboard({ isVendor }) {
     inspectOrder,
     rentalStatusSteps,
     confirmReturn,
-    reviews,
-    getReviewsByProduct,
-    getAverageRating,
+    completeRefund,
     isSameOrder,
   } = useOrders();
 
@@ -303,7 +266,6 @@ export default function AdminDashboard({ isVendor }) {
       { id: "rentalOrders", label: "Rental Orders", icon: Repeat },
       { id: "rentals", label: "Rentals", icon: Tag },
       { id: "products", label: "Products", icon: Package },
-      { id: "reviews", label: "Reviews", icon: Star },
       { id: "analytics", label: "Analytics", icon: BarChart3 },
       { id: "ads", label: "Ads", icon: Image },
     ];
@@ -602,9 +564,13 @@ const [newVendorForm, setNewVendorForm] = useState({
 
   const adStats = {
     active: ads.filter((a) => a.active).length,
-    totalImpressions: ads.reduce((sum, a) => sum + a.impressions, 0),
-    totalClicks: ads.reduce((sum, a) => sum + a.clicks, 0),
-    avgCTR: ads.length > 0 ? ((ads.reduce((sum, a) => sum + (a.clicks / a.impressions) * 100, 0)) / ads.length).toFixed(1) : "0",
+    totalImpressions: ads.reduce((sum, a) => sum + (a.impressions || 0), 0),
+    totalClicks: ads.reduce((sum, a) => sum + (a.clicks || 0), 0),
+    avgCTR: (() => {
+      const imp = ads.reduce((sum, a) => sum + (a.impressions || 0), 0);
+      const clk = ads.reduce((sum, a) => sum + (a.clicks || 0), 0);
+      return imp > 0 ? ((clk / imp) * 100).toFixed(1) : "0.0";
+    })(),
   };
 
   const getInitials = (u) => {
@@ -2836,9 +2802,6 @@ const [newVendorForm, setNewVendorForm] = useState({
                     onChange={(e) => setNewAdForm((prev) => ({ ...prev, type: e.target.value }))}
                     className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 appearance-none cursor-pointer"
                   >
-                    <option value="banner">Banner</option>
-                    <option value="sidebar">Sidebar</option>
-                    <option value="popup">Popup</option>
                     <option value="slide">Homepage Slide</option>
                   </select>
                 </div>
@@ -2853,10 +2816,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                     onChange={(e) => setNewAdForm((prev) => ({ ...prev, position: e.target.value }))}
                     className="w-full px-4 py-2.5 bg-background border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 appearance-none cursor-pointer"
                   >
-                    <option value="homepage-top">Homepage Top</option>
-                    <option value="homepage-bottom">Homepage Bottom</option>
-                    <option value="category-page">Category Page</option>
-                    <option value="product-page">Product Page</option>
+                    <option value="homepage-top">Homepage Slider</option>
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -2928,8 +2888,8 @@ const [newVendorForm, setNewVendorForm] = useState({
                   <div>
                     <h4 className="font-serif text-foreground">{ad.title}</h4>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs px-2.5 py-0.5 bg-ink/10 text-ink rounded-full capitalize">{ad.type}</span>
-                      <span className="text-xs text-muted-foreground">{ad.position}</span>
+                      <span className="text-xs px-2.5 py-0.5 bg-ink/10 text-ink rounded-full capitalize">{ad.type === "slide" ? "Slide" : ad.type}</span>
+                      <span className="text-xs text-muted-foreground">Homepage Slider</span>
                       <span className="text-xs text-muted-foreground">{ad.startDate} → {ad.endDate}</span>
                     </div>
                   </div>
@@ -2939,15 +2899,15 @@ const [newVendorForm, setNewVendorForm] = useState({
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
                         <p className="text-xs text-muted-foreground">Impressions</p>
-                        <p className="font-serif text-sm text-foreground">{ad.impressions.toLocaleString()}</p>
+                        <p className="font-serif text-sm text-foreground">{(ad.impressions || 0).toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Clicks</p>
-                        <p className="font-serif text-sm text-foreground">{ad.clicks.toLocaleString()}</p>
+                        <p className="font-serif text-sm text-foreground">{(ad.clicks || 0).toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">CTR</p>
-                        <p className="font-serif text-sm text-foreground">{ad.impressions > 0 ? ((ad.clicks / ad.impressions) * 100).toFixed(1) : 0}%</p>
+                        <p className="font-serif text-sm text-foreground">{ad.impressions > 0 ? (((ad.clicks || 0) / ad.impressions) * 100).toFixed(1) : "0.0"}%</p>
                       </div>
                     </div>
                   </div>
@@ -3263,11 +3223,12 @@ const [newVendorForm, setNewVendorForm] = useState({
                           <div className="px-6 pb-4">
                             <OrderDetailPanel order={order} showCustomer={true} />
                             {/* Status Controls / Return Flow */}
-                            {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
+                            {order.status === "return_requested" || order.status === "refund_processing" || order.status === "returned" || order.returnRequested ? (
                               <div className="mt-4 pt-4 border-t border-border">
                                 <ReturnStatusTracker
                                   order={order}
                                   onConfirmReturn={confirmReturn}
+                                  onCompleteRefund={completeRefund}
                                   isVendorOrAdmin={true}
                                 />
                               </div>
@@ -3283,28 +3244,42 @@ const [newVendorForm, setNewVendorForm] = useState({
                                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
                                   Update Status:
                                 </span>
-                                {["confirmed", "processing", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => (
-                                  <button
-                                    key={status}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (status === "dispatched") {
-                                        setDispatchModalOrder(order);
-                                        return;
-                                      }
-                                      updateOrderStatusApi(order.id, status);
-                                      setExpandedAdminOrder(null);
-                                    }}
-                                    disabled={order.status === status}
-                                    className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
-                                      order.status === status
-                                        ? "bg-ink/10 text-ink border border-ink/30"
-                                        : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
-                                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                                  >
-                                    {status}
-                                  </button>
-                                ))}
+                                {["confirmed", "processing", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => {
+                                  const flow = ["confirmed", "processing", "preparing", "dispatched", "shipped", "delivered"];
+                                  const currentIdx = flow.indexOf(order.status);
+                                  const targetIdx = flow.indexOf(status);
+                                  const isPast = targetIdx !== -1 && currentIdx !== -1 && targetIdx < currentIdx;
+                                  const isCurrent = order.status === status;
+                                  const isNext = targetIdx === currentIdx + 1;
+                                  const isCancelDisabled = status === "cancelled" && ["dispatched", "shipped", "delivered"].includes(order.status);
+                                  const isDisabled = isPast || isCurrent || isCancelDisabled;
+
+                                  return (
+                                    <button
+                                      key={status}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (status === "dispatched") {
+                                          setDispatchModalOrder(order);
+                                          return;
+                                        }
+                                        updateOrderStatusApi(order.id, status);
+                                        setExpandedAdminOrder(null);
+                                      }}
+                                      disabled={isDisabled}
+                                      className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
+                                        isCurrent
+                                          ? "bg-ink/10 text-ink border border-ink/30"
+                                          : isPast
+                                          ? "border border-border/40 text-muted-foreground/40 bg-secondary/30"
+                                          : "border border-border text-muted-foreground hover:text-foreground hover:border-ink/30"
+                                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                      title={isPast ? "Status already passed (cannot go back)" : isCurrent ? "Current status" : `Update to ${status}`}
+                                    >
+                                      {status}
+                                    </button>
+                                  );
+                                })}
                                 {order.status === "dispatched" && (
                                   <button
                                     type="button"
@@ -3704,97 +3679,6 @@ const [newVendorForm, setNewVendorForm] = useState({
     );
   };
 
-  const renderReviews = () => {
-    const allReviews = reviews || [];
-    const avgRating = allReviews.length > 0
-      ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
-      : 0;
-    const ratingCounts = [5, 4, 3, 2, 1].map((r) => ({
-      rating: r,
-      count: allReviews.filter((review) => review.rating === r).length,
-    }));
-    const maxCount = Math.max(...ratingCounts.map((r) => r.count), 1);
-
-    return (
-      <div className="space-y-8">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Star} label="Total Reviews" value={allReviews.length} index={0} />
-          <StatCard icon={Star} label="Avg Rating" value={avgRating.toFixed(1)} index={1} />
-          <StatCard icon={Star} label="5-Star Reviews" value={allReviews.filter((r) => r.rating === 5).length} index={2} />
-          <StatCard icon={Star} label="Pending Reply" value={allReviews.filter((r) => !r.vendorReply).length} index={3} />
-        </div>
-
-        <div className="bg-cream border border-border p-6">
-          <h3 className="font-serif text-lg text-foreground mb-4">Rating Distribution</h3>
-          <div className="space-y-3">
-            {ratingCounts.map(({ rating, count }) => (
-              <div key={rating} className="flex items-center gap-3">
-                <span className="text-sm text-foreground w-8">{rating} ★</span>
-                <div className="flex-1 h-3 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-400 rounded-full transition-all"
-                    style={{ width: `${(count / maxCount) * 100}%` }}
-                  />
-                </div>
-                <span className="text-sm text-muted-foreground w-8 text-right">{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-cream border border-border overflow-hidden">
-          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-serif">
-            <div className="col-span-2">Customer</div>
-            <div className="col-span-2">Product</div>
-            <div className="col-span-1">Rating</div>
-            <div className="col-span-4">Review</div>
-            <div className="col-span-1">Date</div>
-            <div className="col-span-2">Reply</div>
-          </div>
-          <div className="divide-y divide-border">
-            {allReviews.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <Star size={40} className="mx-auto text-muted-foreground mb-3" />
-                <p className="text-muted-foreground">No reviews yet</p>
-              </div>
-            ) : (
-              allReviews.map((review) => (
-                <div key={review.id} className="px-6 py-4 hover:bg-secondary/50 transition-colors">
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-foreground">{review.userName}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-muted-foreground truncate">{review.productId}</p>
-                    </div>
-                    <div className="md:col-span-1">
-                      <span className="text-amber-500 text-sm">{review.rating} ★</span>
-                    </div>
-                    <div className="md:col-span-4">
-                      <p className="text-sm text-foreground">{review.comment}</p>
-                    </div>
-                    <div className="md:col-span-1">
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(review.date).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="md:col-span-2">
-                      {review.vendorReply ? (
-                        <p className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{review.vendorReply}</p>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No reply</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const renderAnalytics = () => {
     const totalOrders = orders.length;
     const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
@@ -3927,7 +3811,6 @@ const [newVendorForm, setNewVendorForm] = useState({
       case "vendors": return renderVendors();
       case "products": return renderProducts();
       case "rentals": return renderRentals();
-      case "reviews": return renderReviews();
       case "analytics": return renderAnalytics();
       case "categories": return renderCategories();
       case "featured": return renderFeatured();

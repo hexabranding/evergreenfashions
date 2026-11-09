@@ -19,6 +19,7 @@ export const ordersApi = {
   returnOrder: (id, reason, photos = []) => api.post(`/orders/${id}/return`, { reason, photos }),
   uploadReturnPhotos: (id, photos) => api.post(`/orders/${id}/return-photos`, { photos }),
   confirmReturn: (id) => api.post(`/orders/${id}/confirm-return`),
+  completeRefund: (id) => api.post(`/orders/${id}/complete-refund`),
   inspectOrder: (id, inspectionStatus, notes) => api.post(`/orders/${id}/inspect`, { inspectionStatus, notes }),
   refundDeposit: (id, amount) => api.post(`/orders/${id}/refund-deposit`, { amount }),
   requestConfirmOtp: (id) => api.post(`/orders/${id}/confirm-otp/request`),

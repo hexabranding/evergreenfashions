@@ -32,7 +32,7 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
     if (!image) return res.status(400).json({ error: 'An advertisement image is required' });
 
     const ad = await Ad.create({
-      title, subtitle, type: type || 'banner', position: position || 'homepage',
+      title, subtitle, type: type || 'slide', position: position || 'homepage-top',
       image: image || '', link: link || '', buttonText: buttonText || 'Shop Now',
       vendorId: req.user.role === 'vendor' ? req.user.id : null,
       startDate, endDate,
@@ -50,6 +50,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (req.user.role === 'vendor' && ad.vendorId && ad.vendorId !== req.user.id) {
+      return res.status(403).json({ error: 'You can only update your own advertisements' });
+    }
+    if (req.user.role === 'vendor' && !ad.vendorId) {
+      return res.status(403).json({ error: 'Store-wide campaigns can only be modified by administrators' });
     }
 
     const { title, subtitle, type, position, image, link, buttonText, active, startDate, endDate } = req.body;
@@ -78,6 +85,13 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
     if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
       return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (req.user.role === 'vendor' && ad.vendorId && ad.vendorId !== req.user.id) {
+      return res.status(403).json({ error: 'You can only delete your own advertisements' });
+    }
+    if (req.user.role === 'vendor' && !ad.vendorId) {
+      return res.status(403).json({ error: 'Store-wide campaigns can only be deleted by administrators' });
     }
 
     await Ad.findByIdAndDelete(req.params.id);

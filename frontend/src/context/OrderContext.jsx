@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { allProducts } from "@/data/products";
 import { ordersApi } from "@/api/orders";
-import { reviewsApi } from "@/api/reviews";
 import { isOfflineError } from "@/lib/utils";
 
 const OrderContext = createContext();
@@ -172,25 +171,6 @@ function buildDemoOrders() {
   ];
 }
 
-const SEEDED_REVIEWS = (() => {
-  const products = allProducts || [];
-  const samples = [
-    { rating: 5, comment: "Absolutely stunning quality! Fits perfectly.", userName: "Sophia M." },
-    { rating: 4, comment: "Beautiful design, slightly loose but love it.", userName: "Luca B." },
-    { rating: 5, comment: "Exceeded my expectations. Fast shipping too!", userName: "Amara K." },
-  ];
-  return products.slice(0, 3).map((product, i) => ({
-    id: `review-seed-${i + 1}`,
-    productId: product.slug || product.id,
-    userId: `user-seed-${i + 1}`,
-    userName: samples[i].userName,
-    rating: samples[i].rating,
-    comment: samples[i].comment,
-    date: new Date(Date.now() - (i + 1) * 86400000 * 3).toISOString(),
-    vendorReply: null,
-  }));
-})();
-
 export function OrdersProvider({ children }) {
   const [orders, setOrders] = useState(() => loadState("ef_orders", []));
   const [customerApiOrders, setCustomerApiOrders] = useState([]);
@@ -230,16 +210,11 @@ export function OrdersProvider({ children }) {
         commission: 15,
         products: productIds,
         joinedAt: "2024-01-01",
-        totalSales: 2847,
-        totalEarnings: 186520,
-        pendingPayout: 12340,
+        totalSales: 0,
+        totalEarnings: 0,
+        pendingPayout: 0,
       },
     ];
-  });
-  const [reviews, setReviews] = useState(() => {
-    const cached = loadState("ef_reviews", null);
-    if (cached) return cached;
-    return SEEDED_REVIEWS;
   });
 
   useEffect(() => {
@@ -253,35 +228,6 @@ export function OrdersProvider({ children }) {
   useEffect(() => {
     try { localStorage.setItem("ef_vendors", JSON.stringify(vendors)); } catch (_e) { /* quota exceeded */ }
   }, [vendors]);
-
-  useEffect(() => {
-    try { localStorage.setItem("ef_reviews", JSON.stringify(reviews)); } catch (_e) { /* quota exceeded */ }
-  }, [reviews]);
-
-  useEffect(() => {
-    reviewsApi.getAll()
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((r) => ({
-            ...r,
-            id: r._id || r.id,
-            date: r.createdAt || r.date,
-          }));
-          setReviews((prev) => {
-            const ids = new Set(prev.map((p) => p.id));
-            const merged = [...prev];
-            for (const item of mapped) {
-              if (!ids.has(item.id)) {
-                merged.unshift(item);
-                ids.add(item.id);
-              }
-            }
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const getStock = useCallback(
     (productId, size) => {
@@ -445,6 +391,12 @@ const placeOrder = useCallback(
       }
       if (o.status === "return_requested" && !["returned", "cancelled", "delivered"].includes(newStatus)) {
         return o;
+      }
+      const forwardFlow = ["confirmed", "processing", "preparing", "dispatched", "shipped", "delivered"];
+      const currentIdx = forwardFlow.indexOf(o.status);
+      const targetIdx = forwardFlow.indexOf(newStatus);
+      if (currentIdx !== -1 && targetIdx !== -1 && targetIdx < currentIdx) {
+        return o; // Cannot revert back to previous statuses
       }
       const trackingUrl = extraData.trackingUrl !== undefined ? extraData.trackingUrl : o.trackingUrl;
       const courierName = extraData.courierName !== undefined ? extraData.courierName : o.courierName;
@@ -650,17 +602,21 @@ const placeOrder = useCallback(
       });
       return {
         ...o,
-        status: "returned",
+        status: o.rentalDetails ? o.status : "refund_processing",
+        refundStatus: o.rentalDetails ? o.refundStatus : "processing",
+        inspectionStatus: "passed",
+        inspectedAt: new Date().toISOString(),
+        returnPhotosReviewed: true,
         rentalStatus:
           o.rentalDetails && o.rentalStatus === "pending_return" ? "awaiting_inspection" : o.rentalStatus,
         timeline: [
           ...(o.timeline || []),
           {
-            status: "returned",
+            status: "inspected",
             date: new Date().toISOString(),
             description: o.rentalDetails
               ? "Return received, inventory restored — awaiting inspection"
-              : "Return confirmed, inventory restored",
+              : "Product reached our hands & inspection passed. Refund is being processed (expected in 3-4 working days).",
           },
         ],
       };
@@ -674,6 +630,31 @@ const placeOrder = useCallback(
       /* fallback handled locally */
     }
   }, [restoreStock, updateOrderInAllStates]);
+
+  const completeRefund = useCallback(async (orderId) => {
+    updateOrderInAllStates(orderId, (o) => ({
+      ...o,
+      status: "returned",
+      refundStatus: "completed",
+      refundedAt: new Date().toISOString(),
+      timeline: [
+        ...(o.timeline || []),
+        {
+          status: "returned",
+          date: new Date().toISOString(),
+          description: `Refund completed for €${o.total || 0}. Credited to customer payment method.`,
+        },
+      ],
+    }));
+    try {
+      const updated = await ordersApi.completeRefund(orderId);
+      if (updated) {
+        updateOrderInAllStates(orderId, mapApiOrder(updated));
+      }
+    } catch {
+      /* fallback handled locally */
+    }
+  }, [updateOrderInAllStates]);
 
   const rentalStatusSteps = [
     { id: "confirmed", label: "Confirmed", icon: Check },
@@ -736,63 +717,6 @@ const placeOrder = useCallback(
         return { ...v, pendingPayout: Math.max(0, v.pendingPayout - amount) };
       })
     );
-  }, []);
-
-  const addReview = useCallback(async (productId, userId, userName, rating, comment) => {
-    const tempId = `review-${Date.now()}`;
-    const newReview = {
-      id: tempId,
-      productId,
-      userId,
-      userName,
-      rating: Math.min(5, Math.max(1, rating)),
-      comment,
-      date: new Date().toISOString(),
-      vendorReply: null,
-    };
-    setReviews((prev) => [newReview, ...prev]);
-
-    try {
-      const saved = await reviewsApi.add({ productId, rating: newReview.rating, comment });
-      if (saved) {
-        const mapped = { ...saved, id: saved._id || saved.id, date: saved.createdAt || saved.date };
-        setReviews((prev) => prev.map((r) => (r.id === tempId ? mapped : r)));
-      }
-    } catch (err) {
-      console.warn("Could not persist review to backend:", err);
-    }
-    return newReview;
-  }, []);
-
-  const getReviewsByProduct = useCallback(
-    (productId) => {
-      return reviews.filter((r) => r.productId === productId);
-    },
-    [reviews]
-  );
-
-  const getAverageRating = useCallback(
-    (productId) => {
-      const productReviews = reviews.filter((r) => r.productId === productId);
-      if (productReviews.length === 0) return 0;
-      const sum = productReviews.reduce((acc, r) => acc + r.rating, 0);
-      return sum / productReviews.length;
-    },
-    [reviews]
-  );
-
-  const replyToReview = useCallback(async (reviewId, reply) => {
-    setReviews((prev) =>
-      prev.map((r) => {
-        if (r.id !== reviewId) return r;
-        return { ...r, vendorReply: reply };
-      })
-    );
-    try {
-      await reviewsApi.reply(reviewId, reply);
-    } catch (err) {
-      console.warn("Could not save vendor reply to backend:", err);
-    }
   }, []);
 
   const fetchVendorOrders = useCallback(async () => {
@@ -941,7 +865,6 @@ const placeOrder = useCallback(
         orders,
         inventory,
         vendors,
-        reviews,
         placeOrder,
         getOrdersByUser,
         getOrdersByVendor,
@@ -950,6 +873,7 @@ const placeOrder = useCallback(
         requestReturn,
         uploadReturnPhotos,
         confirmReturn,
+        completeRefund,
         inspectOrder,
         refundDeposit,
         rentalStatusSteps,
@@ -961,10 +885,6 @@ const placeOrder = useCallback(
         getVendorByUserId,
         getVendorById,
         updateVendorPayout,
-        addReview,
-        getReviewsByProduct,
-        getAverageRating,
-        replyToReview,
         vendorApiOrders,
         adminApiOrders,
         vendorOrdersLoading,

@@ -32,7 +32,7 @@ export default function DispatchModal({ order, onClose, onConfirm }) {
     try {
       await onConfirm({
         status: "dispatched",
-        ...(order.rentalDetails || order.rentalStatus ? { rentalStatus: "dispatched" } : {}),
+        ...(order.rentalDetails ? { rentalStatus: "dispatched" } : {}),
         courierName: skipTracking ? "" : courierName.trim(),
         trackingUrl: skipTracking ? "" : trackingUrl.trim(),
         trackingNumber: skipTracking ? "" : trackingNumber.trim(),

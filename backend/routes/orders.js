@@ -161,7 +161,7 @@ router.post('/', authMiddleware, async (req, res) => {
       shipping: shipping || {},
       payment: payment || {},
       status: 'confirmed',
-      rentalStatus: rentalDetails ? 'confirmed' : 'active',
+      rentalStatus: rentalDetails ? 'confirmed' : null,
       rentalDetails: rentalDetails || null,
       returnDueDate: rentalDetails?.endDate || null,
       estimatedDelivery,
@@ -308,7 +308,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     }
 
     const { status, rentalStatus, courierName, trackingUrl, trackingNumber } = req.body;
-    const validStatuses = ['confirmed', 'processing', 'preparing', 'dispatched', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'];
+    const validStatuses = ['confirmed', 'processing', 'preparing', 'dispatched', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested', 'refund_processing'];
     const validRentalStatuses = ['confirmed', 'preparing', 'dispatched', 'shipped', 'delivered', 'active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
 
     if (status && !validStatuses.includes(status)) {
@@ -330,8 +330,19 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       if (order.status === 'cancelled' && status !== 'cancelled') {
         return res.status(400).json({ error: 'Cannot modify status of a cancelled order' });
       }
-      if (order.status === 'return_requested' && !['returned', 'cancelled', 'delivered'].includes(status)) {
+      if (['return_requested', 'refund_processing'].includes(order.status) && !['returned', 'cancelled', 'refund_processing', 'delivered'].includes(status)) {
         return res.status(400).json({ error: 'Cannot move an order in return review to forward fulfillment' });
+      }
+
+      // Enforce forward-only progression (prevent going back to previous statuses)
+      const forwardFlow = ['confirmed', 'processing', 'preparing', 'dispatched', 'shipped', 'delivered'];
+      const currentIdx = forwardFlow.indexOf(order.status);
+      const targetIdx = forwardFlow.indexOf(status);
+      if (currentIdx !== -1 && targetIdx !== -1 && targetIdx < currentIdx) {
+        return res.status(400).json({ error: `Cannot revert order status from ${order.status} back to ${status}` });
+      }
+      if (status === 'cancelled' && ['dispatched', 'shipped', 'delivered'].includes(order.status)) {
+        return res.status(400).json({ error: `Cannot cancel an order that is already ${order.status}` });
       }
 
       order.status = status;
@@ -345,7 +356,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       order.timeline.push({ status, date: new Date().toISOString(), description });
     }
 
-    if (rentalStatus && order.rentalStatus !== rentalStatus) {
+    if (order.rentalDetails && rentalStatus && order.rentalStatus !== rentalStatus) {
       order.rentalStatus = rentalStatus;
       order.timeline.push({ status: rentalStatus, date: new Date().toISOString(), description: `Rental status: ${rentalStatus}` });
 
@@ -523,14 +534,45 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
         );
       }
 
-      order.status = 'returned';
       order.returnPhotosReviewed = true;
+      order.inspectionStatus = 'passed';
+      order.inspectedAt = new Date().toISOString();
+
       if (order.rentalDetails) {
         if (order.rentalStatus === 'pending_return') order.rentalStatus = 'awaiting_inspection';
-        order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return received, inventory restored — awaiting inspection' });
+        order.timeline.push({ status: 'awaiting_inspection', date: new Date().toISOString(), description: 'Return received, inventory restored — awaiting inspection' });
       } else {
-        order.timeline.push({ status: 'returned', date: new Date().toISOString(), description: 'Return photos reviewed and confirmed, inventory restored' });
+        order.status = 'refund_processing';
+        order.refundStatus = 'processing';
+        order.timeline.push({ status: 'inspected', date: new Date().toISOString(), description: 'Product reached our hands & inspection passed. Refund is being processed (expected in 3-4 working days).' });
       }
+      await order.save();
+
+      res.json(order.toObject());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/:id/complete-refund', authMiddleware, async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (req.user.role !== 'admin' && req.user.role !== 'vendor') {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      order.status = 'returned';
+      order.refundStatus = 'completed';
+      order.refundedAt = new Date().toISOString();
+      order.timeline.push({
+        status: 'returned',
+        date: new Date().toISOString(),
+        description: `Refund completed for €${order.total || 0}. Credited to customer payment method.`,
+      });
       await order.save();
 
       res.json(order.toObject());

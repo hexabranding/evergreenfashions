@@ -224,26 +224,36 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
         </div>
       </div>
 
-      {order.timeline?.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5 mb-2">
-            <Clock size={12} /> Timeline
-          </p>
-          <div className="space-y-1.5">
-            {order.timeline.map((entry, idx) => (
-              <div key={idx} className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground font-mono w-36 flex-shrink-0">
-                  {new Date(entry.date).toLocaleString()}
-                </span>
-                <span className="capitalize text-foreground">{entry.status}</span>
-                {entry.description && (
-                  <span className="text-muted-foreground">— {entry.description}</span>
-                )}
-              </div>
-            ))}
+      {order.timeline?.length > 0 && (() => {
+        const visibleTimeline = order.timeline.filter((entry) => {
+          if (!order.rentalDetails && entry.description && entry.description.toLowerCase().includes("rental status")) {
+            return false;
+          }
+          return true;
+        });
+        if (!visibleTimeline.length) return null;
+
+        return (
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5 mb-2">
+              <Clock size={12} /> Timeline
+            </p>
+            <div className="space-y-1.5">
+              {visibleTimeline.map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-3 text-xs">
+                  <span className="text-muted-foreground font-mono w-36 flex-shrink-0">
+                    {new Date(entry.date).toLocaleString()}
+                  </span>
+                  <span className="capitalize text-foreground">{entry.status}</span>
+                  {entry.description && (
+                    <span className="text-muted-foreground truncate">— {entry.description}</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

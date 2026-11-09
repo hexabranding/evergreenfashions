@@ -4,7 +4,6 @@ import bcrypt from 'bcryptjs';
 import User from './models/User.js';
 import Product from './models/Product.js';
 import Order from './models/Order.js';
-import Review from './models/Review.js';
 import Ad from './models/Ad.js';
 
 dns.setServers(['8.8.8.8', '8.8.4.4']);
@@ -149,27 +148,6 @@ export async function seedData() {
       approvalStatus: 'approved',
     });
   }
-
-  await Review.insertMany([
-    {
-      productId: 'ecarlate-gown', userId: 'cust-1', userName: 'Isabelle Moreau', rating: 5,
-      comment: 'Absolutely stunning! The fabric quality is extraordinary and the fit is perfect. Received countless compliments.',
-      vendorReply: 'Thank you, Isabelle! We are delighted this gown exceeded your expectations.',
-    },
-    {
-      productId: 'ecarlate-gown', userId: 'cust-1', userName: 'Isabelle Moreau', rating: 5,
-      comment: 'The scarlet hue is even more vivid in person. A true showstopper for any evening event.',
-    },
-    {
-      productId: 'emeraude-gown', userId: 'cust-1', userName: 'Isabelle Moreau', rating: 5,
-      comment: 'The emerald color is breathtaking. Felt like royalty wearing this to the gala.',
-    },
-    {
-      productId: 'ivoire-draped', userId: 'cust-1', userName: 'Isabelle Moreau', rating: 4,
-      comment: 'Beautiful draping and luxurious feel. Slightly longer than expected but easily altered.',
-      vendorReply: 'Thank you for your feedback! We are glad you loved the piece.',
-    },
-  ]);
 
   await Order.insertMany([
     {

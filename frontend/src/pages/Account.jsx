@@ -41,7 +41,8 @@ const statusColors = {
   shipped: "bg-purple-100 text-purple-700",
   delivered: "bg-emerald-100 text-emerald-700",
   active: "bg-emerald-100 text-emerald-700",
-  returned: "bg-red-100 text-red-700",
+  returned: "bg-emerald-100 text-emerald-700",
+  refund_processing: "bg-amber-100 text-amber-700",
   cancelled: "bg-gray-100 text-gray-700",
   return_requested: "bg-amber-100 text-amber-700",
   pending_return: "bg-amber-100 text-amber-700",
@@ -697,7 +698,7 @@ export default function Account() {
                             >
                               <div className="px-5 pb-5 border-t border-border pt-4">
                                 {/* Status Timeline / Return Flow */}
-                                {order.status === "return_requested" || order.status === "returned" || order.returnRequested ? (
+                                {order.status === "return_requested" || order.status === "refund_processing" || order.status === "returned" || order.returnRequested ? (
                                   <div className="mb-8">
                                     <ReturnStatusTracker
                                       order={order}
@@ -827,30 +828,40 @@ export default function Account() {
                                 </div>
 
                                 {/* Timeline History */}
-                                {order.timeline && order.timeline.length > 0 && (
-                                  <div className="mb-6">
-                                    <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
-                                    <div className="space-y-4">
-                                      {order.timeline.map((event, idx) => (
-                                        <div key={idx} className="flex gap-4">
-                                          <div className="relative flex flex-col items-center">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
-                                            {idx !== order.timeline.length - 1 && (
-                                              <div className="w-px h-full bg-border absolute top-3.5" />
-                                            )}
+                                {order.timeline && order.timeline.length > 0 && (() => {
+                                  const visibleTimeline = order.timeline.filter((event) => {
+                                    if (!order.rentalDetails && event.description && event.description.toLowerCase().includes("rental status")) {
+                                      return false;
+                                    }
+                                    return true;
+                                  });
+                                  if (!visibleTimeline.length) return null;
+
+                                  return (
+                                    <div className="mb-6">
+                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
+                                      <div className="space-y-4">
+                                        {visibleTimeline.map((event, idx) => (
+                                          <div key={idx} className="flex gap-4">
+                                            <div className="relative flex flex-col items-center">
+                                              <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
+                                              {idx !== visibleTimeline.length - 1 && (
+                                                <div className="w-px h-full bg-border absolute top-3.5" />
+                                              )}
+                                            </div>
+                                            <div>
+                                              <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
+                                              {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
+                                              <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                                                {new Date(event.date).toLocaleString()}
+                                              </p>
+                                            </div>
                                           </div>
-                                          <div>
-                                            <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
-                                            {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
-                                            <p className="text-[10px] text-muted-foreground mt-1 font-mono">
-                                              {new Date(event.date).toLocaleString()}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {(isReturnPending(order) || hasReturnPhotos(order)) && (
                                   <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
@@ -1191,30 +1202,40 @@ export default function Account() {
                                 </div>
 
                                 {/* Timeline History */}
-                                {order.timeline && order.timeline.length > 0 && (
-                                  <div className="mb-6">
-                                    <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
-                                    <div className="space-y-4">
-                                      {order.timeline.map((event, idx) => (
-                                        <div key={idx} className="flex gap-4">
-                                          <div className="relative flex flex-col items-center">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
-                                            {idx !== order.timeline.length - 1 && (
-                                              <div className="w-px h-full bg-border absolute top-3.5" />
-                                            )}
+                                {order.timeline && order.timeline.length > 0 && (() => {
+                                  const visibleTimeline = order.timeline.filter((event) => {
+                                    if (!order.rentalDetails && event.description && event.description.toLowerCase().includes("rental status")) {
+                                      return false;
+                                    }
+                                    return true;
+                                  });
+                                  if (!visibleTimeline.length) return null;
+
+                                  return (
+                                    <div className="mb-6">
+                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground mb-4">Order History & Updates</h4>
+                                      <div className="space-y-4">
+                                        {visibleTimeline.map((event, idx) => (
+                                          <div key={idx} className="flex gap-4">
+                                            <div className="relative flex flex-col items-center">
+                                              <div className="w-2.5 h-2.5 rounded-full bg-ink flex-shrink-0 mt-1" />
+                                              {idx !== visibleTimeline.length - 1 && (
+                                                <div className="w-px h-full bg-border absolute top-3.5" />
+                                              )}
+                                            </div>
+                                            <div>
+                                              <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
+                                              {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
+                                              <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                                                {new Date(event.date).toLocaleString()}
+                                              </p>
+                                            </div>
                                           </div>
-                                          <div>
-                                            <p className="text-sm font-medium text-foreground capitalize">{event.status.replace(/_/g, " ")}</p>
-                                            {event.description && <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>}
-                                            <p className="text-[10px] text-muted-foreground mt-1 font-mono">
-                                              {new Date(event.date).toLocaleString()}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {(isReturnPending(order) || hasReturnPhotos(order)) && (
                                   <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>

@@ -1,26 +1,54 @@
 import React from "react";
-import { Check, Camera, RotateCcw, Search, ShieldCheck, Wallet, CheckCircle2, AlertCircle, Plus } from "lucide-react";
+import { Check, Camera, RotateCcw, Search, ShieldCheck, Wallet, CheckCircle2, AlertCircle, Plus, Clock } from "lucide-react";
 import { ReturnPhotoGallery } from "@/components/ReturnPhotos";
 
 /**
  * ReturnStatusTracker
  * Renders the exact luxury signature Return Roadmap (connecting line + black circle checkmarks)
- * including the dedicated "Return Photos" step requested by the user:
- * [Return Requested] ─── [Return Photos] ─── [Awaiting Inspection] ─── [Inspected] ─── [Refunded] ─── [Completed]
+ * [Return Requested] ─── [Return Photos] ─── [Awaiting Inspection] ─── [Inspected] ─── [Refund Processed] ─── [Completed]
+ *
+ * Flow:
+ * 1. Customer requests return -> Return Requested checked
+ * 2. Customer uploads photos -> Return Photos checked
+ * 3. Waiting for seller/admin review -> Awaiting Inspection
+ * 4. Seller confirms inspection -> Inspected checked & Refund Processing active (with 3-4 days message to customer)
+ * 5. Seller/system confirms refund -> Refund Processed & Completed checked
  */
 export default function ReturnStatusTracker({
   order,
   onConfirmReturn,
+  onCompleteRefund,
   onUploadPhotos,
   isVendorOrAdmin = false,
 }) {
   if (!order) return null;
 
   const isRental = Boolean(order.rentalDetails);
-  const isReturned = order.status === "returned" || order.rentalStatus === "completed";
+
+  // Completed status check
+  const isRefundCompleted = Boolean(
+    order.refundStatus === "completed" ||
+    (order.status === "returned" && !order.rentalDetails && order.refundStatus !== "processing") ||
+    (order.rentalDetails && order.rentalStatus === "completed")
+  );
+
+  // Refund processing status check
+  const isRefundProcessing = Boolean(
+    order.status === "refund_processing" ||
+    order.refundStatus === "processing" ||
+    (order.rentalDetails && order.rentalStatus === "deposit_refunded")
+  );
+
+  // Inspected status check
+  const isInspected = Boolean(
+    isRefundCompleted ||
+    isRefundProcessing ||
+    order.inspectionStatus === "passed" ||
+    order.returnPhotosReviewed ||
+    (order.rentalDetails && ["inspected", "deposit_refunded", "completed"].includes(order.rentalStatus))
+  );
+
   const hasPhotos = (order.returnPhotos || []).length > 0;
-  const isReviewed = Boolean(order.returnPhotosReviewed || order.rentalStatus === "inspected" || isReturned);
-  const isRefunded = Boolean(order.depositRefunded || isReturned);
 
   const steps = [
     { id: "requested", label: "Return Requested", icon: RotateCcw },
@@ -31,20 +59,49 @@ export default function ReturnStatusTracker({
     { id: "completed", label: "Completed", icon: CheckCircle2 },
   ];
 
-  // Determine current active step index (0 to 5)
-  // When an order is fully returned/completed, ALL steps are completed.
-  let currentStepIdx = 0;
-  if (isReturned) {
-    currentStepIdx = 5;
-  } else if (isRefunded) {
-    currentStepIdx = 4;
-  } else if (isReviewed) {
-    currentStepIdx = 3;
-  } else if (hasPhotos) {
-    currentStepIdx = 2; // Photos uploaded, awaiting inspection
-  } else {
-    currentStepIdx = 1; // Return requested, awaiting photos
-  }
+  // Determine completion and current state for each individual step
+  const stepStates = [
+    // Step 0: Return Requested
+    {
+      completed: true,
+      current: !hasPhotos && !isInspected,
+    },
+    // Step 1: Return Photos
+    {
+      completed: hasPhotos || isInspected,
+      current: !hasPhotos && !isInspected,
+    },
+    // Step 2: Awaiting Inspection
+    {
+      completed: isInspected,
+      current: hasPhotos && !isInspected,
+    },
+    // Step 3: Inspected
+    {
+      completed: isInspected,
+      current: isInspected && !isRefundProcessing && !isRefundCompleted,
+    },
+    // Step 4: Refund Processed
+    {
+      completed: isRefundCompleted,
+      current: isRefundProcessing && !isRefundCompleted,
+    },
+    // Step 5: Completed
+    {
+      completed: isRefundCompleted,
+      current: isRefundCompleted,
+    },
+  ];
+
+  // Connecting line check between step i and step i+1
+  const isLineActive = (idx) => {
+    if (idx === 0) return hasPhotos || isInspected;
+    if (idx === 1) return hasPhotos || isInspected;
+    if (idx === 2) return isInspected;
+    if (idx === 3) return isRefundProcessing || isRefundCompleted;
+    if (idx === 4) return isRefundCompleted;
+    return false;
+  };
 
   return (
     <div className="bg-background rounded-sm p-4 mb-4 border border-border">
@@ -64,8 +121,7 @@ export default function ReturnStatusTracker({
       <div className="overflow-x-auto pb-3">
         <div className="flex items-start min-w-[560px] relative">
           {steps.map((step, idx) => {
-            const isCompleted = isReturned ? true : idx <= currentStepIdx;
-            const isCurrent = isReturned ? idx === 5 : idx === currentStepIdx;
+            const { completed: isCompleted, current: isCurrent } = stepStates[idx];
 
             return (
               <div key={step.id} className="relative flex-1 flex flex-col items-center text-center">
@@ -73,7 +129,7 @@ export default function ReturnStatusTracker({
                 {idx < steps.length - 1 && (
                   <div
                     className={`absolute top-3.5 left-1/2 w-full h-[2px] -translate-y-1/2 z-0 ${
-                      isReturned || idx < currentStepIdx ? "bg-ink" : "bg-border"
+                      isLineActive(idx) ? "bg-ink" : "bg-border"
                     }`}
                   />
                 )}
@@ -115,6 +171,31 @@ export default function ReturnStatusTracker({
         </div>
       </div>
 
+      {/* Real-time Customer Notification Message in Track Bar */}
+      {isRefundProcessing && !isRefundCompleted && (
+        <div className="mt-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-sm p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+          <Clock size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold tracking-wide">
+              Product reached our hands & inspection passed
+            </p>
+            <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+              Your refund is currently being processed and will be credited to your account within 3 to 4 working days.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Completion message */}
+      {isRefundCompleted && (
+        <div className="mt-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-sm p-3 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+          <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0" />
+          <span>
+            <strong>Refund completed & credited.</strong> The return process is complete and this order is closed.
+          </span>
+        </div>
+      )}
+
       {/* Photos Preview & Return Action Area */}
       <div className="mt-4 pt-3 border-t border-border/60">
         {hasPhotos ? (
@@ -151,10 +232,29 @@ export default function ReturnStatusTracker({
         {/* Vendor & Admin Action Controls */}
         {isVendorOrAdmin && (
           <div className="mt-4 pt-3 border-t border-border flex items-center justify-between flex-wrap gap-3">
-            {isReturned ? (
+            {isRefundCompleted ? (
               <div className="flex items-center gap-2 text-xs text-emerald-800 font-medium">
                 <CheckCircle2 size={15} className="text-emerald-600" />
-                <span>Return completed & inventory restocked. Forward fulfillment is locked.</span>
+                <span>Return & refund completed. Forward fulfillment is locked.</span>
+              </div>
+            ) : isRefundProcessing ? (
+              <div className="flex items-center justify-between w-full flex-wrap gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Inspection complete. Inventory has been restored. Waiting for payout settlement.
+                </span>
+                {onCompleteRefund && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCompleteRefund(order.id);
+                    }}
+                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-sm transition-colors flex items-center gap-1.5 font-medium shadow-sm"
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>Mark Refund as Completed</span>
+                  </button>
+                )}
               </div>
             ) : order.status === "return_requested" ? (
               <div className="flex items-center gap-3">
@@ -168,7 +268,7 @@ export default function ReturnStatusTracker({
                     className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-sm hover:bg-emerald-700 transition-colors flex items-center gap-1.5 font-medium shadow-sm"
                   >
                     <CheckCircle2 size={13} />
-                    <span>Review Photos & Confirm Return</span>
+                    <span>Review Photos & Confirm Inspection</span>
                   </button>
                 ) : (
                   <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-sm">
