@@ -349,7 +349,7 @@ export default function AdminDashboard({ isVendor }) {
   const [userRoleFilter, setUserRoleFilter] = useState("All");
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
-  const [editUserForm, setEditUserForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
+  const [editUserForm, setEditUserForm] = useState({ firstName: "", lastName: "", email: "", role: "", phone: "", storeName: "", commission: 15, newPassword: "" });
   const [resetPasswordUser, setResetPasswordUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [showAddUser, setShowAddUser] = useState(false);
@@ -675,19 +675,59 @@ const [newVendorForm, setNewVendorForm] = useState({
   };
 
   const startEditUser = (u) => {
+    setSelectedUser(u);
     setEditingUser(u.id);
-    setEditUserForm({ firstName: u.firstName || "", lastName: u.lastName || "", email: u.email || "", role: u.role || "customer" });
+    setEditUserForm({
+      firstName: u.firstName || "",
+      lastName: u.lastName || "",
+      email: u.email || "",
+      role: u.role || "customer",
+      phone: u.phone || "",
+      storeName: u.vendorStore?.name || "",
+      commission: u.vendorStore?.commission || 15,
+      newPassword: "",
+    });
   };
 
   const saveEditUser = async () => {
+    if (!editingUser) return;
     try {
-      await authApi.admin.updateUser(editingUser, editUserForm);
-    } catch {}
-    setUsers((prev) => prev.map((u) =>
-      u.id === editingUser ? { ...u, ...editUserForm } : u
-    ));
-    setSelectedUser((prev) => (prev && prev.id === editingUser ? { ...prev, ...editUserForm } : prev));
-    setEditingUser(null);
+      const payload = {
+        firstName: editUserForm.firstName,
+        lastName: editUserForm.lastName,
+        email: editUserForm.email,
+        role: editUserForm.role,
+        phone: editUserForm.phone,
+      };
+      if (editUserForm.role === "vendor") {
+        payload.vendorStore = {
+          name: editUserForm.storeName,
+          commission: Number(editUserForm.commission) || 15,
+        };
+      }
+      await authApi.admin.updateUser(editingUser, payload);
+
+      if (editUserForm.newPassword && editUserForm.newPassword.length >= 6) {
+        await authApi.admin.resetPassword(editingUser, editUserForm.newPassword);
+      }
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === editingUser
+            ? { ...u, ...payload, vendorStore: payload.vendorStore || u.vendorStore }
+            : u
+        )
+      );
+      setSelectedUser((prev) =>
+        prev && prev.id === editingUser
+          ? { ...prev, ...payload, vendorStore: payload.vendorStore || prev.vendorStore }
+          : prev
+      );
+      setEditingUser(null);
+      alert("User updated successfully");
+    } catch (err) {
+      alert(err.message || "Failed to update user");
+    }
   };
 
   const cancelEditUser = () => {
@@ -1386,31 +1426,42 @@ const [newVendorForm, setNewVendorForm] = useState({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                <h3 className="font-serif text-lg text-foreground">User Details</h3>
-                <button onClick={() => { setSelectedUser(null); setEditingUser(null); }} className="p-2 hover:bg-secondary transition-colors">
+                <h3 className="font-serif text-lg text-foreground">
+                  {editingUser ? "Edit User" : "User Details"}
+                </h3>
+                <button
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setEditingUser(null);
+                    setResetPasswordUser(null);
+                  }}
+                  className="p-2 hover:bg-secondary transition-colors"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
               <div className="p-6 space-y-6">
                 {editingUser === selectedUser.id ? (
                   <div className="space-y-4">
-                    <div>
-                      <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">First Name</label>
-                      <input
-                        type="text"
-                        value={editUserForm.firstName}
-                        onChange={(e) => setEditUserForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Last Name</label>
-                      <input
-                        type="text"
-                        value={editUserForm.lastName}
-                        onChange={(e) => setEditUserForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">First Name</label>
+                        <input
+                          type="text"
+                          value={editUserForm.firstName}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                          className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Last Name</label>
+                        <input
+                          type="text"
+                          value={editUserForm.lastName}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                          className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Email</label>
@@ -1421,20 +1472,71 @@ const [newVendorForm, setNewVendorForm] = useState({
                         className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Role</label>
-                      <select
-                        value={editUserForm.role}
-                        onChange={(e) => setEditUserForm((prev) => ({ ...prev, role: e.target.value }))}
-                        className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 appearance-none cursor-pointer"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="vendor">Vendor</option>
-                        <option value="customer">Customer</option>
-                      </select>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Phone</label>
+                        <input
+                          type="text"
+                          value={editUserForm.phone || ""}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, phone: e.target.value }))}
+                          placeholder="+33 ..."
+                          className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Role</label>
+                        <select
+                          value={editUserForm.role}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, role: e.target.value }))}
+                          className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 appearance-none cursor-pointer"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="vendor">Vendor</option>
+                          <option value="customer">Customer</option>
+                        </select>
+                      </div>
                     </div>
+
+                    {editUserForm.role === "vendor" && (
+                      <div className="p-4 bg-secondary/50 border border-border space-y-3">
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-serif">Vendor Store Details</p>
+                        <div>
+                          <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1">Store Name</label>
+                          <input
+                            type="text"
+                            value={editUserForm.storeName || ""}
+                            onChange={(e) => setEditUserForm((prev) => ({ ...prev, storeName: e.target.value }))}
+                            placeholder="Store Name"
+                            className="w-full px-4 py-2 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-1">Commission (%)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={editUserForm.commission || 15}
+                            onChange={(e) => setEditUserForm((prev) => ({ ...prev, commission: e.target.value }))}
+                            className="w-full px-4 py-2 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">New Password (leave blank to keep current)</label>
+                      <input
+                        type="password"
+                        value={editUserForm.newPassword || ""}
+                        onChange={(e) => setEditUserForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                        placeholder="Min 6 characters to reset"
+                        className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                      />
+                    </div>
+
                     <div className="flex gap-3 pt-4 border-t border-border">
-                      <button onClick={saveEditUser} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
+                      <button onClick={saveEditUser} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs flex items-center justify-center gap-2">
                         <Check size={14} /> Save Changes
                       </button>
                       <button onClick={cancelEditUser} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-border text-xs uppercase tracking-widest hover:bg-secondary transition-colors">
