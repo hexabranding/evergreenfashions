@@ -5,7 +5,6 @@ import {
   User,
   Package,
   MapPin,
-  Heart,
   LogOut,
   Edit2,
   Plus,
@@ -19,7 +18,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import { authApi } from "@/api/auth";
 import { ReturnPhotoGallery, ReturnPhotoUploader } from "@/components/ReturnPhotos";
@@ -32,7 +30,6 @@ const tabs = [
   { id: "orders", label: "Orders", icon: Package },
   { id: "rentals", label: "Rental Orders", icon: Calendar },
   { id: "addresses", label: "Addresses", icon: MapPin },
-  { id: "wishlist", label: "Wishlist", icon: Heart },
 ];
 
 const statusColors = {
@@ -76,7 +73,6 @@ const listItem = {
 
 export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
-  const { wishlist, toggleWishlist, addToCart } = useCart();
   const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, uploadReturnPhotos, rentalStatusSteps } = useOrders();
   const navigate = useNavigate();
 
@@ -283,10 +279,6 @@ export default function Account() {
     setShowAddressForm(true);
   };
 
-  const handleMoveToCart = (item) => {
-    addToCart(item);
-    toggleWishlist(item);
-  };
 
   const handlePasswordChange = async () => {
     setPasswordError("");
@@ -1404,72 +1396,7 @@ export default function Account() {
             </motion.div>
           )}
 
-          {/* Wishlist Tab */}
-          {activeTab === "wishlist" && (
-            <motion.div key="wishlist" {...fadeSlide}>
-              <h2 className="font-serif text-2xl text-foreground mb-6">Wishlist</h2>
 
-              {wishlist.length === 0 ? (
-                <div className="bg-secondary rounded-sm p-10 text-center">
-                  <Heart size={40} className="mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground mb-4">Your wishlist is empty</p>
-                  <Link to="/collection" className="btn-ink px-6 py-2 text-sm rounded-sm inline-block">
-                    Browse Collection
-                  </Link>
-                </div>
-              ) : (
-                <motion.div
-                  variants={listStagger}
-                  initial="initial"
-                  animate="animate"
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-                >
-                  {wishlist.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      variants={listItem}
-                      layout
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="bg-secondary rounded-sm overflow-hidden group"
-                    >
-                      <Link to={`/product/${item.id}`} className="block aspect-[3/4] bg-background overflow-hidden">
-                        {item.image && (
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          />
-                        )}
-                      </Link>
-                      <div className="p-4">
-                        <Link
-                          to={`/product/${item.id}`}
-                          className="text-sm font-medium text-foreground hover:text-muted-foreground transition-colors block truncate"
-                        >
-                          {item.name}
-                        </Link>
-                        <p className="text-sm text-muted-foreground mt-0.5">{parsePrice(item.price)}</p>
-                        <div className="flex gap-2 mt-3">
-                          <button
-                            onClick={() => handleMoveToCart(item)}
-                            className="btn-ink px-3 py-1.5 text-xs rounded-sm flex-1"
-                          >
-                            Move to Cart
-                          </button>
-                          <button
-                            onClick={() => toggleWishlist(item)}
-                            className="p-1.5 text-muted-foreground hover:text-crimson border border-border rounded-sm transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </motion.div>
-              )}
-            </motion.div>
-          )}
         </AnimatePresence>
       </div>
 
