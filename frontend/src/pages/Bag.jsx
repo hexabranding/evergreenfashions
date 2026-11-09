@@ -14,9 +14,9 @@ export default function Bag() {
         transition={{ duration: 0.8 }}
         className="mb-12"
       >
-        <p className="eyebrow mb-4">— Wishlist</p>
+        <p className="eyebrow mb-4">— Curated Wishlist</p>
         <h1 className="text-display text-5xl md:text-7xl">
-          Your <em className="text-crimson">Bag</em>
+          Your <em className="text-crimson">Wishlist</em>
         </h1>
       </motion.div>
 

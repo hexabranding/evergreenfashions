@@ -152,7 +152,7 @@ export default function Layout() {
 
           <div className="flex items-center gap-5">
             <button onClick={() => setSearchOpen(!searchOpen)}><Search className="w-4 h-4" /></button>
-            <Link to="/bag" className="relative hidden sm:block">
+            <Link to="/wishlist" className="relative hidden sm:block" aria-label="Wishlist">
               <Heart className={`w-4 h-4 ${wishlist.length > 0 ? "fill-crimson text-crimson" : ""}`} />
               {wishlist.length > 0 && <span className="absolute -top-2 -right-2 bg-crimson text-cream text-[9px] w-4 h-4 rounded-full flex items-center justify-center">{wishlist.length}</span>}
             </Link>

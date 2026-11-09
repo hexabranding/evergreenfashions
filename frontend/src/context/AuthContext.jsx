@@ -236,26 +236,38 @@ export function AuthProvider({ children }) {
         street: address.street || address.address1 || "",
       };
 
+      let computedList = [];
       setCurrentUser((prev) => {
         if (!prev) return null;
         const existing = prev.addresses || [];
         const isEdit = existing.some((a) => a.id === newAddress.id);
-        const updatedList = isEdit
+        computedList = isEdit
           ? existing.map((a) => (a.id === newAddress.id ? { ...a, ...newAddress } : (newAddress.isDefault ? { ...a, isDefault: false } : a)))
           : [...existing.map((a) => (newAddress.isDefault ? { ...a, isDefault: false } : a)), newAddress];
-        return { ...prev, addresses: updatedList };
+        return { ...prev, addresses: computedList };
+      });
+
+      setUsers((uPrev) => {
+        const userId = currentUser?.id;
+        if (!userId) return uPrev;
+        return uPrev.map((u) => (u.id === userId ? { ...u, addresses: computedList } : u));
       });
 
       try {
         const res = await authApi.addAddress(newAddress);
         if (res?.addresses) {
           setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+          setUsers((uPrev) => {
+            const userId = currentUser?.id;
+            if (!userId) return uPrev;
+            return uPrev.map((u) => (u.id === userId ? { ...u, addresses: res.addresses } : u));
+          });
         }
       } catch (err) {
         console.warn("Could not save address to backend:", err);
       }
     },
-    []
+    [currentUser?.id]
   );
 
   const removeAddress = useCallback(
@@ -266,39 +278,63 @@ export function AuthProvider({ children }) {
         return { ...prev, addresses };
       });
 
+      setUsers((uPrev) => {
+        const userId = currentUser?.id;
+        if (!userId) return uPrev;
+        return uPrev.map((u) => (u.id === userId ? { ...u, addresses: (u.addresses || []).filter((a) => a.id !== addressId) } : u));
+      });
+
       try {
         const res = await authApi.removeAddress(addressId);
         if (res?.addresses) {
           setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+          setUsers((uPrev) => {
+            const userId = currentUser?.id;
+            if (!userId) return uPrev;
+            return uPrev.map((u) => (u.id === userId ? { ...u, addresses: res.addresses } : u));
+          });
         }
       } catch (err) {
         console.warn("Could not remove address from backend:", err);
       }
     },
-    []
+    [currentUser?.id]
   );
 
   const setDefaultAddress = useCallback(
     async (addressId) => {
-      setCurrentUser((prev) => {
-        if (!prev) return null;
-        const addresses = (prev.addresses || []).map((a) => ({
+      const updateList = (addresses) =>
+        (addresses || []).map((a) => ({
           ...a,
           isDefault: a.id === addressId,
         }));
-        return { ...prev, addresses };
+
+      setCurrentUser((prev) => {
+        if (!prev) return null;
+        return { ...prev, addresses: updateList(prev.addresses) };
+      });
+
+      setUsers((uPrev) => {
+        const userId = currentUser?.id;
+        if (!userId) return uPrev;
+        return uPrev.map((u) => (u.id === userId ? { ...u, addresses: updateList(u.addresses) } : u));
       });
 
       try {
         const res = await authApi.setDefaultAddress(addressId);
         if (res?.addresses) {
           setCurrentUser((prev) => (prev ? { ...prev, addresses: res.addresses } : null));
+          setUsers((uPrev) => {
+            const userId = currentUser?.id;
+            if (!userId) return uPrev;
+            return uPrev.map((u) => (u.id === userId ? { ...u, addresses: res.addresses } : u));
+          });
         }
       } catch (err) {
         console.warn("Could not set default address on backend:", err);
       }
     },
-    []
+    [currentUser?.id]
   );
 
   const isAuthenticated = !!currentUser;

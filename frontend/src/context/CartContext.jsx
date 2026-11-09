@@ -50,56 +50,172 @@ function getItemPrice(item) {
   return typeof item.price === "number" ? item.price : parseFloat(String(item.price).replace("€", "").replace(",", ""));
 }
 
+function getCartKey(userId) {
+  return userId ? `ef_cart_${userId}` : `ef_cart_guest`;
+}
+
+function getWishlistKey(userId) {
+  return userId ? `ef_wishlist_${userId}` : `ef_wishlist_guest`;
+}
+
+function getCouponKey(userId) {
+  return userId ? `ef_coupon_${userId}` : `ef_coupon_guest`;
+}
+
+function loadCartForUser(userId) {
+  const userKey = getCartKey(userId);
+  const saved = loadState(userKey, null);
+  if (saved !== null) return saved;
+  return loadState("ef_cart", []);
+}
+
+function loadWishlistForUser(userId) {
+  const userKey = getWishlistKey(userId);
+  const saved = loadState(userKey, null);
+  if (saved !== null) return saved;
+  return loadState("ef_wishlist", []);
+}
+
+function loadCouponForUser(userId) {
+  const userKey = getCouponKey(userId);
+  const saved = loadState(userKey, null);
+  if (saved !== null) return saved;
+  return loadState("ef_coupon", null);
+}
+
+function mergeCarts(existingItems = [], incomingItems = []) {
+  if (!incomingItems || incomingItems.length === 0) return existingItems;
+  const merged = [...existingItems];
+  incomingItems.forEach((incoming) => {
+    const incomingKey = `${incoming.name}-${incoming.selectedSize || ""}-${incoming.selectedColor || ""}-${incoming.isRental ? "rental" : ""}`;
+    const idx = merged.findIndex((item) => {
+      const itemKey = `${item.name}-${item.selectedSize || ""}-${item.selectedColor || ""}-${item.isRental ? "rental" : ""}`;
+      return itemKey === incomingKey;
+    });
+    if (idx !== -1) {
+      merged[idx] = { ...merged[idx], qty: merged[idx].qty + (incoming.qty || 1) };
+    } else {
+      merged.push(incoming);
+    }
+  });
+  return merged;
+}
+
+function mergeWishlists(existingWishlist = [], incomingWishlist = []) {
+  if (!incomingWishlist || incomingWishlist.length === 0) return existingWishlist;
+  const merged = [...existingWishlist];
+  incomingWishlist.forEach((item) => {
+    const exists = merged.some((m) => (m.id && item.id ? m.id === item.id : m.name === item.name));
+    if (!exists) merged.push(item);
+  });
+  return merged;
+}
+
 export function CartProvider({ children }) {
   const { placeOrder: createSharedOrder } = useOrders();
-  const { isAuthenticated, requestPhoneLogin, currentUser } = useAuth();
-  const [cartItems, setCartItems] = useState(() => loadState("ef_cart", []));
-  const [wishlist, setWishlist] = useState(() => loadState("ef_wishlist", []));
+  const { isAuthenticated, currentUser } = useAuth();
+  const currentUserId = currentUser?.id || null;
+
+  const [cartItems, setCartItems] = useState(() => loadCartForUser(currentUserId));
+  const [wishlist, setWishlist] = useState(() => loadWishlistForUser(currentUserId));
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [order, setOrder] = useState(() => loadState("ef_order", null));
-  const [coupon, setCoupon] = useState(() => loadState("ef_coupon", null));
+  const [coupon, setCoupon] = useState(() => loadCouponForUser(currentUserId));
   const [couponError, setCouponError] = useState("");
 
-  const prevUserRef = useRef(currentUser?.id || null);
+  const prevUserRef = useRef(currentUserId);
+  const isInitialMount = useRef(true);
 
+  // When currentUser changes (login, logout, or account switch)
   useEffect(() => {
-    // When a logged-in user logs out (or account changes), clear the cart, wishlist, and coupon
-    if (prevUserRef.current && (!currentUser || currentUser.id !== prevUserRef.current)) {
-      setCartItems([]);
-      setWishlist([]);
-      setCoupon(null);
-      localStorage.removeItem("ef_cart");
-      localStorage.removeItem("ef_wishlist");
-      localStorage.removeItem("ef_coupon");
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
     }
-    prevUserRef.current = currentUser?.id || null;
-  }, [currentUser]);
+
+    const prevUserId = prevUserRef.current;
+    const nextUserId = currentUser?.id || null;
+
+    if (prevUserId === nextUserId) return;
+
+    if (nextUserId) {
+      // User just logged in! Restore user's saved items and merge any guest items
+      const userSavedCart = loadCartForUser(nextUserId);
+      const userSavedWishlist = loadWishlistForUser(nextUserId);
+      const userSavedCoupon = loadCouponForUser(nextUserId);
+
+      const guestCart = loadState("ef_cart_guest", []);
+      const guestWishlist = loadState("ef_wishlist_guest", []);
+      const guestCoupon = loadState("ef_coupon_guest", null);
+
+      const finalCart = mergeCarts(userSavedCart, guestCart);
+      const finalWishlist = mergeWishlists(userSavedWishlist, guestWishlist);
+      const finalCoupon = userSavedCoupon || guestCoupon;
+
+      setCartItems(finalCart);
+      setWishlist(finalWishlist);
+      setCoupon(finalCoupon);
+
+      saveState(getCartKey(nextUserId), finalCart.map(compactProduct));
+      saveState(getWishlistKey(nextUserId), finalWishlist.map(compactProduct));
+      if (finalCoupon) saveState(getCouponKey(nextUserId), finalCoupon);
+
+      localStorage.removeItem("ef_cart_guest");
+      localStorage.removeItem("ef_wishlist_guest");
+      localStorage.removeItem("ef_coupon_guest");
+    } else {
+      // User logged out: previous user's cart is safely kept in ef_cart_<prevUserId>
+      // Switch active session to guest storage
+      const guestCart = loadState("ef_cart_guest", []);
+      const guestWishlist = loadState("ef_wishlist_guest", []);
+      const guestCoupon = loadState("ef_coupon_guest", null);
+
+      setCartItems(guestCart);
+      setWishlist(guestWishlist);
+      setCoupon(guestCoupon);
+    }
+
+    prevUserRef.current = nextUserId;
+  }, [currentUser?.id]);
 
   const clearCart = useCallback(() => {
     setCartItems([]);
+    const key = getCartKey(currentUser?.id);
+    localStorage.removeItem(key);
     localStorage.removeItem("ef_cart");
-  }, []);
+  }, [currentUser?.id]);
 
   const clearWishlist = useCallback(() => {
     setWishlist([]);
+    const key = getWishlistKey(currentUser?.id);
+    localStorage.removeItem(key);
     localStorage.removeItem("ef_wishlist");
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
-    // Uploaded product images are base64 strings and can exceed localStorage's
-    // small quota. The live cart retains them; saved cart data stays compact.
+    // Keep user-scoped and legacy keys in sync
+    const key = getCartKey(currentUser?.id);
+    saveState(key, cartItems.map(compactProduct));
     saveState("ef_cart", cartItems.map(compactProduct));
-  }, [cartItems]);
+  }, [cartItems, currentUser?.id]);
 
   useEffect(() => {
+    const key = getWishlistKey(currentUser?.id);
+    saveState(key, wishlist.map(compactProduct));
     saveState("ef_wishlist", wishlist.map(compactProduct));
-  }, [wishlist]);
+  }, [wishlist, currentUser?.id]);
 
   useEffect(() => {
-    if (coupon) saveState("ef_coupon", coupon);
-    else localStorage.removeItem("ef_coupon");
-  }, [coupon]);
+    const key = getCouponKey(currentUser?.id);
+    if (coupon) {
+      saveState(key, coupon);
+      saveState("ef_coupon", coupon);
+    } else {
+      localStorage.removeItem(key);
+      localStorage.removeItem("ef_coupon");
+    }
+  }, [coupon, currentUser?.id]);
 
   useEffect(() => {
     if (order) saveState("ef_order", order);
@@ -234,6 +350,9 @@ export function CartProvider({ children }) {
       setOrder(savedOrder);
       setCartItems([]);
       setCoupon(null);
+      const userKey = getCartKey(currentUser?.id);
+      localStorage.removeItem(userKey);
+      localStorage.removeItem("ef_cart");
       return savedOrder;
     },
     [cartItems, coupon, discount, createSharedOrder, currentUser?.id]
@@ -244,20 +363,16 @@ export function CartProvider({ children }) {
   }, []);
 
   const toggleWishlist = useCallback((product) => {
-    if (!isAuthenticated) {
-      requestPhoneLogin(() => setWishlist((prev) => [...prev, product]));
-      return false;
-    }
     setWishlist((prev) => {
-      const exists = prev.find((item) => item.name === product.name);
-      if (exists) return prev.filter((item) => item.name !== product.name);
+      const exists = prev.find((item) => (item.id && product.id ? item.id === product.id : item.name === product.name));
+      if (exists) return prev.filter((item) => (item.id && product.id ? item.id !== product.id : item.name !== product.name));
       return [...prev, product];
     });
     return true;
-  }, [isAuthenticated, requestPhoneLogin]);
+  }, []);
 
   const isWishlisted = useCallback(
-    (name) => wishlist.some((item) => item.name === name),
+    (identifier) => wishlist.some((item) => item.id === identifier || item.slug === identifier || item.name === identifier),
     [wishlist]
   );
 
