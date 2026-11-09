@@ -5,8 +5,16 @@ export const ordersApi = {
   getUserOrders: () => api.get("/orders"),
   getAdminOrders: () => api.get("/orders/admin"),
   getVendorOrders: () => api.get("/orders/vendor"),
-  updateStatus: (id, status) => api.put(`/orders/${id}/status`, { status }),
-  updateRentalStatus: (id, rentalStatus) => api.put(`/orders/${id}/status`, { rentalStatus }),
+  updateStatus: (id, statusOrPayload) => {
+    const payload = typeof statusOrPayload === "string" ? { status: statusOrPayload } : statusOrPayload;
+    return api.put(`/orders/${id}/status`, payload);
+  },
+  updateRentalStatus: (id, rentalStatusOrPayload) => {
+    const payload = typeof rentalStatusOrPayload === "string"
+      ? { rentalStatus: rentalStatusOrPayload }
+      : { rentalStatus: rentalStatusOrPayload.rentalStatus || rentalStatusOrPayload.status, ...rentalStatusOrPayload };
+    return api.put(`/orders/${id}/status`, payload);
+  },
   cancelOrder: (id, reason) => api.post(`/orders/${id}/cancel`, { reason }),
   returnOrder: (id, reason, photos = []) => api.post(`/orders/${id}/return`, { reason, photos }),
   uploadReturnPhotos: (id, photos) => api.post(`/orders/${id}/return-photos`, { photos }),

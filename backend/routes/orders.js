@@ -307,9 +307,9 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    const { status, rentalStatus } = req.body;
-    const validStatuses = ['confirmed', 'processing', 'preparing', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'];
-    const validRentalStatuses = ['confirmed', 'preparing', 'shipped', 'delivered', 'active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
+    const { status, rentalStatus, courierName, trackingUrl, trackingNumber } = req.body;
+    const validStatuses = ['confirmed', 'processing', 'preparing', 'dispatched', 'shipped', 'delivered', 'cancelled', 'returned', 'return_requested'];
+    const validRentalStatuses = ['confirmed', 'preparing', 'dispatched', 'shipped', 'delivered', 'active', 'pending_return', 'awaiting_inspection', 'inspected', 'deposit_refunded', 'completed', 'cancelled'];
 
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -319,9 +319,20 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid rental status' });
     }
 
+    if (courierName !== undefined) order.courierName = courierName;
+    if (trackingUrl !== undefined) order.trackingUrl = trackingUrl;
+    if (trackingNumber !== undefined) order.trackingNumber = trackingNumber;
+
     if (status && order.status !== status) {
       order.status = status;
-      order.timeline.push({ status, date: new Date().toISOString(), description: `Order ${status}` });
+      let description = `Order ${status}`;
+      if (status === 'dispatched') {
+        order.dispatchedAt = new Date().toISOString();
+        if (order.courierName || order.trackingUrl || order.trackingNumber) {
+          description = `Dispatched via ${order.courierName || 'Courier'}${order.trackingNumber ? ` (Tracking #${order.trackingNumber})` : ''}`;
+        }
+      }
+      order.timeline.push({ status, date: new Date().toISOString(), description });
     }
 
     if (rentalStatus && order.rentalStatus !== rentalStatus) {
@@ -332,6 +343,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       const rentalToOrderStatus = {
         confirmed: 'confirmed',
         preparing: 'preparing',
+        dispatched: 'dispatched',
         shipped: 'shipped',
         delivered: 'delivered',
         active: 'delivered',

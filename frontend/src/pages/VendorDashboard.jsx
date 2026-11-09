@@ -7,6 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
 import OrderDetailPanel from "@/components/OrderDetailPanel";
+import DispatchModal from "@/components/DispatchModal";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import { authApi } from "@/api/auth";
@@ -43,6 +44,7 @@ import {
   Repeat,
   FileText,
   CreditCard,
+  Truck,
   Settings,
   Inbox,
   MailOpen,
@@ -83,11 +85,12 @@ const PRODUCT_CATEGORIES = [
   { id: "evening-wear", name: "Evening Wear" },
 ];
 
-const ORDER_STATUS_FLOW = ["confirmed", "preparing", "shipped", "delivered"];
+const ORDER_STATUS_FLOW = ["confirmed", "preparing", "dispatched", "shipped", "delivered"];
 const RENTAL_STATUS_FLOW = ["pending", "approved", "shipped", "active", "returned"];
 const STATUS_COLORS = {
   confirmed: "bg-blue-100 text-blue-800",
   preparing: "bg-amber-100 text-amber-800",
+  dispatched: "bg-orange-100 text-orange-800",
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-100 text-emerald-800",
   returned: "bg-red-100 text-red-800",
@@ -218,6 +221,7 @@ function StatusBadge({ status }) {
     >
       {status === "confirmed" && <Clock size={12} />}
       {status === "preparing" && <Package size={12} />}
+      {status === "dispatched" && <Truck size={12} />}
       {status === "shipped" && <TrendingUp size={12} />}
       {status === "delivered" && <CheckCircle size={12} />}
       {status === "returned" && <RefreshCw size={12} />}
@@ -320,6 +324,7 @@ export default function VendorDashboard() {
   const [expandedVendorOrder, setExpandedVendorOrder] = useState(null);
   const [expandedVendorRentalOrder, setExpandedVendorRentalOrder] = useState(null);
   const [productModal, setProductModal] = useState(null);
+  const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -1240,6 +1245,7 @@ export default function VendorDashboard() {
       All: filteredVendorOrders.length,
       confirmed: filteredVendorOrders.filter((o) => o.status === "confirmed").length,
       preparing: filteredVendorOrders.filter((o) => o.status === "preparing").length,
+      dispatched: filteredVendorOrders.filter((o) => o.status === "dispatched").length,
       shipped: filteredVendorOrders.filter((o) => o.status === "shipped").length,
       delivered: filteredVendorOrders.filter((o) => o.status === "delivered").length,
       return_requested: filteredVendorOrders.filter((o) => o.status === "return_requested").length,
@@ -1354,11 +1360,15 @@ export default function VendorDashboard() {
                                   </span>
                                 )
                               )}
-                              {["confirmed", "preparing", "shipped", "delivered", "cancelled"].map((status) => (
+                              {["confirmed", "preparing", "dispatched", "shipped", "delivered", "cancelled"].map((status) => (
                                 <button
                                   key={status}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    if (status === "dispatched") {
+                                      setDispatchModalOrder(order);
+                                      return;
+                                    }
                                     updateOrderStatusApi(order.id, status);
                                     setExpandedVendorOrder(null);
                                   }}
@@ -1372,6 +1382,19 @@ export default function VendorDashboard() {
                                   {status}
                                 </button>
                               ))}
+                              {order.status === "dispatched" && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDispatchModalOrder(order);
+                                  }}
+                                  className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                                >
+                                  <Truck size={12} />
+                                  <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </motion.div>
@@ -1405,7 +1428,7 @@ export default function VendorDashboard() {
     const sortedVendorRentalOrders = [...filteredVendorRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
     const vendorFilterStatuses = [
-      "confirmed", "preparing", "shipped", "delivered", "active",
+      "confirmed", "preparing", "dispatched", "shipped", "delivered", "active",
       "pending_return", "awaiting_inspection", "inspected", "deposit_refunded",
       "completed", "cancelled",
     ];
@@ -1695,7 +1718,13 @@ export default function VendorDashboard() {
                                     key={step.id}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      if (isNext) handleNextRentalStatus(order.id, currentRentalStepId);
+                                      if (isNext) {
+                                        if (step.id === "dispatched") {
+                                          setDispatchModalOrder(order);
+                                          return;
+                                        }
+                                        handleNextRentalStatus(order.id, currentRentalStepId);
+                                      }
                                     }}
                                     disabled={!isNext}
                                     className={`text-xs tracking-wider uppercase px-3 py-2 rounded-sm transition-colors ${
@@ -1710,6 +1739,19 @@ export default function VendorDashboard() {
                                   </button>
                                 );
                               })}
+                              {(order.rentalStatus === "dispatched" || order.status === "dispatched") && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDispatchModalOrder(order);
+                                  }}
+                                  className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                                >
+                                  <Truck size={12} />
+                                  <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </motion.div>
@@ -2367,6 +2409,15 @@ export default function VendorDashboard() {
           </div>
         )}
       </AnimatePresence>
+      <DispatchModal
+        order={dispatchModalOrder}
+        onClose={() => setDispatchModalOrder(null)}
+        onConfirm={async (data) => {
+          await updateOrderStatusApi(dispatchModalOrder.id, data);
+          setExpandedVendorOrder(null);
+          setExpandedVendorRentalOrder(null);
+        }}
+      />
     </div>
   );
 }

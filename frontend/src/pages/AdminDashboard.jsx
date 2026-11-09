@@ -6,6 +6,7 @@ import { allProducts, parsePrice } from "@/data/products";
 import { motion, AnimatePresence } from "framer-motion";
 import AddProductForm from "@/components/AddProductForm";
 import OrderDetailPanel from "@/components/OrderDetailPanel";
+import DispatchModal from "@/components/DispatchModal";
 import { adsApi } from "@/api/ads";
 import { productsApi } from "@/api/products";
 import { authApi } from "@/api/auth";
@@ -13,6 +14,7 @@ import { getRentalDueDate, isRentalOverdue, getOrderName, getOrderItemNames, get
 import {
   LayoutDashboard,
   Package,
+  Truck,
   ShoppingCart,
   Users,
   DollarSign,
@@ -121,12 +123,14 @@ const MONTHLY_DATA = [
 const statusColors = {
   Confirmed: "bg-blue-100 text-blue-800",
   Preparing: "bg-amber-100 text-amber-800",
+  Dispatched: "bg-amber-100 text-amber-900 border border-amber-300",
   Shipped: "bg-indigo-100 text-indigo-800",
   Delivered: "bg-emerald-100 text-emerald-800",
   Returned: "bg-gray-100 text-gray-800",
   confirmed: "bg-blue-100 text-blue-800",
   processing: "bg-sky-100 text-sky-800",
   preparing: "bg-amber-100 text-amber-800",
+  dispatched: "bg-amber-100 text-amber-900 border border-amber-300",
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-gray-200 text-gray-700",
@@ -395,6 +399,7 @@ const [newVendorForm, setNewVendorForm] = useState({
   const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState("All");
   const [expandedAdminRentalOrder, setExpandedAdminRentalOrder] = useState(null);
   const [adminRentalOrderStatusFilter, setAdminRentalOrderStatusFilter] = useState("All");
+  const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
 
   const rentalProducts = useMemo(() => products
     .filter((product) => product.rentalAvailable)
@@ -3048,6 +3053,7 @@ const [newVendorForm, setNewVendorForm] = useState({
       confirmed: filteredAdminOrders.filter((o) => o.status === "confirmed").length,
       processing: filteredAdminOrders.filter((o) => o.status === "processing").length,
       preparing: filteredAdminOrders.filter((o) => o.status === "preparing").length,
+      dispatched: filteredAdminOrders.filter((o) => o.status === "dispatched").length,
       shipped: filteredAdminOrders.filter((o) => o.status === "shipped").length,
       delivered: filteredAdminOrders.filter((o) => o.status === "delivered").length,
       return_requested: filteredAdminOrders.filter((o) => o.status === "return_requested").length,
@@ -3163,11 +3169,15 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   </span>
                                 )
                               )}
-                              {["confirmed", "processing", "preparing", "shipped", "delivered", "returned", "cancelled"].map((status) => (
+                              {["confirmed", "processing", "preparing", "dispatched", "shipped", "delivered", "returned", "cancelled"].map((status) => (
                                 <button
                                   key={status}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    if (status === "dispatched") {
+                                      setDispatchModalOrder(order);
+                                      return;
+                                    }
                                     updateOrderStatusApi(order.id, status);
                                     setExpandedAdminOrder(null);
                                   }}
@@ -3181,6 +3191,19 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   {status}
                                 </button>
                               ))}
+                              {order.status === "dispatched" && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDispatchModalOrder(order);
+                                  }}
+                                  className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                                >
+                                  <Truck size={12} />
+                                  <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </motion.div>
@@ -3220,7 +3243,7 @@ const [newVendorForm, setNewVendorForm] = useState({
     const sortedRentalOrders = [...filteredRentalOrders].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
     const rentalFilterStatuses = [
-      "confirmed", "preparing", "shipped", "delivered", "active",
+      "confirmed", "preparing", "dispatched", "shipped", "delivered", "active",
       "pending_return", "awaiting_inspection", "inspected", "deposit_refunded",
       "completed", "cancelled", "Overdue",
     ];
@@ -3512,6 +3535,10 @@ const [newVendorForm, setNewVendorForm] = useState({
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (isNext) {
+                                        if (step.id === "dispatched") {
+                                          setDispatchModalOrder(order);
+                                          return;
+                                        }
                                         updateRentalStatusApi(order.id, step.id);
                                         setExpandedAdminRentalOrder(null);
                                       }
@@ -3529,6 +3556,19 @@ const [newVendorForm, setNewVendorForm] = useState({
                                   </button>
                                 );
                               })}
+                              {(order.rentalStatus === "dispatched" || order.status === "dispatched") && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDispatchModalOrder(order);
+                                  }}
+                                  className="text-xs text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-sm hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                                >
+                                  <Truck size={12} />
+                                  <span>{order.trackingUrl ? "Edit Tracking Link" : "+ Add Tracking Link"}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </motion.div>
@@ -3880,6 +3920,16 @@ const [newVendorForm, setNewVendorForm] = useState({
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirm}
         confirmLabel={confirmModal.confirmLabel}
+      />
+
+      <DispatchModal
+        order={dispatchModalOrder}
+        onClose={() => setDispatchModalOrder(null)}
+        onConfirm={async (data) => {
+          await updateOrderStatusApi(dispatchModalOrder.id, data);
+          setExpandedAdminOrder(null);
+          setExpandedAdminRentalOrder(null);
+        }}
       />
     </div>
   );

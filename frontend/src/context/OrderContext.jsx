@@ -398,15 +398,30 @@ const placeOrder = useCallback(
     [orders]
   );
 
-  const updateOrderStatus = useCallback((orderId, newStatus) => {
-    updateOrderInAllStates(orderId, (o) => ({
-      ...o,
-      status: newStatus,
-      timeline: [
-        ...(o.timeline || []),
-        { status: newStatus, date: new Date().toISOString(), description: `Order ${newStatus}` },
-      ],
-    }));
+  const updateOrderStatus = useCallback((orderId, newStatus, extraData = {}) => {
+    updateOrderInAllStates(orderId, (o) => {
+      const trackingUrl = extraData.trackingUrl !== undefined ? extraData.trackingUrl : o.trackingUrl;
+      const courierName = extraData.courierName !== undefined ? extraData.courierName : o.courierName;
+      const trackingNumber = extraData.trackingNumber !== undefined ? extraData.trackingNumber : o.trackingNumber;
+      let description = `Order ${newStatus}`;
+      if (newStatus === "dispatched") {
+        if (courierName || trackingUrl || trackingNumber) {
+          description = `Dispatched via ${courierName || "Courier"}${trackingNumber ? ` (Tracking #${trackingNumber})` : ""}`;
+        }
+      }
+      return {
+        ...o,
+        status: newStatus,
+        courierName,
+        trackingUrl,
+        trackingNumber,
+        dispatchedAt: newStatus === "dispatched" ? new Date().toISOString() : o.dispatchedAt,
+        timeline: [
+          ...(o.timeline || []),
+          { status: newStatus, date: new Date().toISOString(), description },
+        ],
+      };
+    });
   }, [updateOrderInAllStates]);
 
   const returnOrder = useCallback(
@@ -617,6 +632,7 @@ const placeOrder = useCallback(
   const rentalStatusSteps = [
     { id: "confirmed", label: "Confirmed", icon: Check },
     { id: "preparing", label: "Preparing", icon: Package },
+    { id: "dispatched", label: "Dispatched", icon: Truck },
     { id: "shipped", label: "Shipped", icon: Truck },
     { id: "delivered", label: "Delivered", icon: PackageCheck },
     { id: "active", label: "Rental Active", icon: Shirt },
@@ -631,6 +647,7 @@ const placeOrder = useCallback(
     const rentalToOrderStatus = {
       confirmed: "confirmed",
       preparing: "preparing",
+      dispatched: "dispatched",
       shipped: "shipped",
       delivered: "delivered",
       active: "delivered",
@@ -810,10 +827,12 @@ const placeOrder = useCallback(
     }
   }, []);
 
-  const updateOrderStatusApi = useCallback(async (orderId, status) => {
-    updateOrderStatus(orderId, status);
+  const updateOrderStatusApi = useCallback(async (orderId, statusOrPayload, extraData = {}) => {
+    const payload = typeof statusOrPayload === "string" ? { status: statusOrPayload, ...extraData } : statusOrPayload;
+    const status = payload.status;
+    updateOrderStatus(orderId, status, payload);
     try {
-      const updated = await ordersApi.updateStatus(orderId, status);
+      const updated = await ordersApi.updateStatus(orderId, payload);
       if (updated) {
         updateOrderInAllStates(orderId, mapApiOrder(updated));
       }

@@ -15,6 +15,8 @@ import {
   Calendar,
   Lock,
   ChevronDown,
+  Truck,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
@@ -37,6 +39,7 @@ const statusColors = {
   confirmed: "bg-blue-100 text-blue-700",
   processing: "bg-sky-100 text-sky-700",
   preparing: "bg-amber-100 text-amber-700",
+  dispatched: "bg-orange-100 text-orange-700",
   shipped: "bg-purple-100 text-purple-700",
   delivered: "bg-emerald-100 text-emerald-700",
   active: "bg-emerald-100 text-emerald-700",
@@ -50,7 +53,7 @@ const statusColors = {
   completed: "bg-gray-100 text-gray-700",
 };
 
-const statusSteps = ["confirmed", "preparing", "shipped", "delivered"];
+const statusSteps = ["confirmed", "preparing", "dispatched", "shipped", "delivered"];
 
 const hasReturnPhotos = (order) => (order?.returnPhotos || []).length > 0;
 const isReturnPending = (order) => !!order?.returnRequested || order?.status === "return_requested";
@@ -694,6 +697,37 @@ export default function Account() {
                                     </div>
                                   ))}
                                 </div>
+
+                                {/* Courier & Live Tracking Card */}
+                                {(order.trackingUrl || order.courierName || order.status === "dispatched" || order.status === "shipped") && (
+                                  <div className="mb-6 bg-cream/70 dark:bg-card border border-border p-4 rounded-sm flex items-center justify-between flex-wrap gap-3">
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium flex items-center gap-1.5">
+                                        <Truck size={14} /> Courier Tracking
+                                      </p>
+                                      <p className="text-sm font-medium text-foreground">
+                                        {order.courierName || "Courier Service"}
+                                        {order.trackingNumber && <span className="ml-2 font-mono text-xs text-muted-foreground">#{order.trackingNumber}</span>}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {order.status === "delivered" ? "Delivered to your address" : "Your parcel has been dispatched and is on its way."}
+                                      </p>
+                                    </div>
+                                    {order.trackingUrl ? (
+                                      <a
+                                        href={order.trackingUrl.startsWith("http") ? order.trackingUrl : `https://${order.trackingUrl}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn-ink px-4 py-2 text-xs uppercase tracking-wider flex items-center gap-1.5"
+                                      >
+                                        <span>Track Your Order</span>
+                                        <ExternalLink size={12} />
+                                      </a>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground italic">Tracking link will update shortly</span>
+                                    )}
+                                  </div>
+                                )}
 
                                 {/* Order Items */}
                                 <div className="space-y-3 mb-4">

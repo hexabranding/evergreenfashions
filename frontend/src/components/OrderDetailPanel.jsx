@@ -1,6 +1,6 @@
 import { parsePrice } from "@/data/products";
 import { ReturnPhotoGallery } from "@/components/ReturnPhotos";
-import { Clock, MapPin, CreditCard, Package, User, Camera, AlertCircle, Hash } from "lucide-react";
+import { Clock, MapPin, CreditCard, Package, User, Camera, AlertCircle, Hash, Truck, ExternalLink } from "lucide-react";
 
 function formatShippingName(shipping) {
   if (!shipping) return "—";
@@ -81,6 +81,51 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
           )}
         </div>
       </div>
+
+      {(order.trackingUrl || order.courierName || order.status === "dispatched" || order.status === "shipped") && (
+        <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 p-3.5 rounded-sm">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+            <p className="text-[10px] uppercase tracking-widest text-amber-900 dark:text-amber-300 flex items-center gap-1.5 font-medium">
+              <Truck size={13} /> Courier & Tracking
+            </p>
+            {order.status === "dispatched" && (
+              <span className="text-[10px] tracking-wider uppercase bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-xs font-medium">
+                Dispatched
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium text-foreground">
+                {order.courierName || "Courier Service"}
+                {order.trackingNumber && (
+                  <span className="text-xs text-muted-foreground ml-2 font-mono">
+                    #{order.trackingNumber}
+                  </span>
+                )}
+              </p>
+              {order.dispatchedAt && (
+                <p className="text-[11px] text-muted-foreground">
+                  Dispatched on {new Date(order.dispatchedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+            {order.trackingUrl ? (
+              <a
+                href={order.trackingUrl.startsWith("http") ? order.trackingUrl : `https://${order.trackingUrl}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-ink text-cream hover:bg-crimson text-xs tracking-wider uppercase transition-colors rounded-sm"
+              >
+                <span>Track Package</span>
+                <ExternalLink size={12} />
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">Tracking link not provided yet</span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5 mb-3">
