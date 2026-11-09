@@ -180,10 +180,10 @@ export default function Layout() {
                       <p className="text-[10px] text-muted-foreground">{currentUser?.email}</p>
                     </div>
                     <div className="py-1">
-                      <Link to="/account" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-xs hover:bg-secondary transition-colors">
+                      <Link to="/account?tab=profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-xs hover:bg-secondary transition-colors">
                         <User className="w-3.5 h-3.5" /> My Account
                       </Link>
-                      <Link to="/account" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-xs hover:bg-secondary transition-colors">
+                      <Link to="/account?tab=orders" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-xs hover:bg-secondary transition-colors">
                         <ShoppingBag className="w-3.5 h-3.5" /> My Orders
                       </Link>
                       {isVendor && (

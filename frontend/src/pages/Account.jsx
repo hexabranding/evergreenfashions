@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -75,8 +75,30 @@ export default function Account() {
   const { currentUser: user, updateProfile, addAddress, removeAddress, setDefaultAddress, logout } = useAuth();
   const { getOrdersByUser, fetchCustomerOrders, customerApiOrders, cancelOrderApi, requestReturn, uploadReturnPhotos, rentalStatusSteps } = useOrders();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const params = useParams();
 
-  const [activeTab, setActiveTab] = useState("profile");
+  const tabFromUrl = useMemo(() => {
+    const qTab = searchParams.get("tab");
+    if (qTab && ["profile", "orders", "rentals", "addresses"].includes(qTab)) return qTab;
+    if (location.pathname.includes("/account/orders")) return "orders";
+    if (location.pathname.includes("/account/rentals")) return "rentals";
+    if (location.pathname.includes("/account/addresses")) return "addresses";
+    if (location.state?.tab && ["profile", "orders", "rentals", "addresses"].includes(location.state.tab)) {
+      return location.state.tab;
+    }
+    return "profile";
+  }, [searchParams, location.pathname, location.state]);
+
+  const [activeTab, setActiveTab] = useState(tabFromUrl);
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
@@ -84,7 +106,13 @@ export default function Account() {
     email: "",
     phone: "",
   });
-  const [expandedOrder, setExpandedOrder] = useState(null);
+  const [expandedOrder, setExpandedOrder] = useState(params.orderId || null);
+
+  useEffect(() => {
+    if (params.orderId) {
+      setExpandedOrder(params.orderId);
+    }
+  }, [params.orderId]);
   const [cancelOrderId, setCancelOrderId] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -335,7 +363,10 @@ export default function Account() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setSearchParams({ tab: tab.id }, { replace: true });
+                }}
                 className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive
                     ? "text-foreground"

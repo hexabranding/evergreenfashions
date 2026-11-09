@@ -57,6 +57,9 @@ function App() {
               <Route path="login" element={<Login />} />
               <Route path="register" element={<Register />} />
               <Route path="account" element={<Account />} />
+              <Route path="account/orders" element={<Account />} />
+              <Route path="account/rentals" element={<Account />} />
+              <Route path="account/addresses" element={<Account />} />
               <Route path="account/orders/:orderId" element={<Account />} />
               <Route path="account/rentals/:orderId" element={<Account />} />
               <Route path="vendor" element={<VendorDashboard />} />
