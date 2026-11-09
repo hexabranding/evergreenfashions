@@ -59,6 +59,7 @@ import {
   Banknote,
   Receipt,
   Landmark,
+  ExternalLink,
 } from "lucide-react";
 
 const TABS = [
@@ -305,6 +306,7 @@ export default function VendorDashboard() {
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("all");
   const [productSearch, setProductSearch] = useState("");
+  const [productTab, setProductTab] = useState("all");
   const [earningsPeriod, setEarningsPeriod] = useState("7months");
 
   const [newProductForm, setNewProductForm] = useState(false);
@@ -422,17 +424,42 @@ export default function VendorDashboard() {
 
   const vendor = getVendorByUserId(currentUser.id) || { id: currentUser.id, userId: currentUser.id, storeName: currentUser.vendorStore?.name || `${currentUser.firstName} ${currentUser.lastName}`, description: currentUser.vendorStore?.description || "", commission: currentUser.vendorStore?.commission || 15, joinedAt: currentUser.createdAt || new Date().toISOString(), totalSales: 0, totalEarnings: 0, pendingPayout: 0 };
 
+  const isMyProduct = useCallback((product) => {
+    if (!product) return false;
+    const currentId = currentUser?.id;
+    const vendorId = vendor?.id;
+    if (product.vendorId && (product.vendorId === currentId || product.vendorId === vendorId)) {
+      return true;
+    }
+    const storeName = (vendor?.storeName || currentUser?.vendorStore?.name || "").trim().toLowerCase();
+    if (product.vendor && storeName && product.vendor.trim().toLowerCase() === storeName) {
+      return true;
+    }
+    const isAtelierParis = currentId === "vendor-1" || storeName === "atelier paris";
+    if (isAtelierParis && (product.vendorId === "vendor-1" || product.vendorId === "ef-main" || !product.vendorId)) {
+      return true;
+    }
+    return false;
+  }, [currentUser?.id, currentUser?.vendorStore?.name, vendor?.id, vendor?.storeName]);
+
+  const allProductsList = vendorProductsList;
+  const myProductsList = useMemo(() => {
+    return allProductsList.filter(isMyProduct);
+  }, [allProductsList, isMyProduct]);
+
+  const activeProductsList = productTab === "my" ? myProductsList : allProductsList;
   const vendorProducts = vendorProductsList;
   const orderNameScope = vendor?.id || currentUser?.id || null;
 
-  const filteredVendorProducts = vendorProducts.filter((p) => {
+  const filteredVendorProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    if (!q) return true;
-    return (
+    if (!q) return activeProductsList;
+    return activeProductsList.filter((p) =>
       p.name?.toLowerCase().includes(q) ||
-      p.category?.toLowerCase().includes(q)
+      p.category?.toLowerCase().includes(q) ||
+      p.vendor?.toLowerCase().includes(q)
     );
-  });
+  }, [activeProductsList, productSearch]);
 
   const localVendorOrders = getOrdersByVendor(vendor.id);
   const vendorOrders = useMemo(() => {
@@ -606,6 +633,7 @@ export default function VendorDashboard() {
         approvalStatus: saved.approvalStatus || (editingProduct ? editingProduct.approvalStatus : "pending"),
       };
       setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+      setProductTab("my");
       setNewProductForm(false);
       setEditingProduct(null);
       if (!editingProduct) {
@@ -824,6 +852,43 @@ export default function VendorDashboard() {
         </div>
       </div>
 
+      {/* Product Sub-Tabs: Tab 1: All Products | Tab 2: My Products */}
+      <div className="flex border-b border-border/80 gap-2">
+        <button
+          type="button"
+          onClick={() => setProductTab("all")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            productTab === "all"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          All Products
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            productTab === "all" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {allProductsList.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setProductTab("my")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            productTab === "my"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          My Products
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            productTab === "my" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {myProductsList.length}
+          </span>
+        </button>
+      </div>
+
       <div ref={productFormRef}>
         <AnimatePresence>
           {newProductForm && (
@@ -843,14 +908,27 @@ export default function VendorDashboard() {
       {filteredVendorProducts.length === 0 ? (
         <EmptyState
           icon={Package}
-          title={productSearch ? "No Products Found" : "No Products Yet"}
-          description={productSearch ? "No products match your search." : "Start adding your products to the marketplace."}
+          title={
+            productSearch
+              ? "No Products Found"
+              : productTab === "my"
+              ? "No Products in Your Store"
+              : "No Products Found"
+          }
+          description={
+            productSearch
+              ? "No products match your search criteria."
+              : productTab === "my"
+              ? "You haven't added any products to your store yet. Click Add Product to start selling."
+              : "No products currently available in the catalogue."
+          }
           action={productSearch ? undefined : "Add First Product"}
           onAction={productSearch ? undefined : handleAddProduct}
         />
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredVendorProducts.map((product) => {
+            const isOwned = isMyProduct(product);
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
             const isExpanded = expandedProduct === product.id;
@@ -882,17 +960,20 @@ export default function VendorDashboard() {
                     <span className={`text-xs font-medium bg-background/90 backdrop-blur-sm px-2.5 py-1 rounded-full ${stockStatus.color}`}>
                       {stockStatus.label}
                     </span>
-                    {product.approvalStatus === "pending" && (
+                    <span className="text-[10px] font-medium bg-background/90 backdrop-blur-sm text-foreground/80 border border-border px-2 py-0.5 rounded-full">
+                      {isOwned ? "Your Product" : (product.vendor || "Other Vendor")}
+                    </span>
+                    {isOwned && product.approvalStatus === "pending" && (
                       <span className="text-[11px] font-medium bg-amber-100/95 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                         <Clock size={11} /> Pending Review
                       </span>
                     )}
-                    {product.approvalStatus === "rejected" && (
+                    {isOwned && product.approvalStatus === "rejected" && (
                       <span className="text-[11px] font-medium bg-red-100/95 text-red-900 border border-red-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={product.approvalReason || "Rejected by admin"}>
                         <AlertCircle size={11} /> Rejected
                       </span>
                     )}
-                    {(!product.approvalStatus || product.approvalStatus === "approved") && (
+                    {isOwned && (!product.approvalStatus || product.approvalStatus === "approved") && (
                       <span className="text-[11px] font-medium bg-emerald-100/95 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                         <CheckCircle size={11} /> Live in Store
                       </span>
@@ -939,27 +1020,43 @@ export default function VendorDashboard() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditProduct(product);
-                      }}
-                      className="flex-1 text-xs tracking-widest uppercase py-2 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <Edit2 size={12} />
-                      Edit
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProduct(product);
-                      }}
-                      className="text-xs tracking-widest uppercase py-2 px-3 border border-border/60 text-crimson hover:bg-crimson/5 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                  {isOwned ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditProduct(product);
+                        }}
+                        className="flex-1 text-xs tracking-widest uppercase py-2 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Edit2 size={12} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProduct(product);
+                        }}
+                        className="text-xs tracking-widest uppercase py-2 px-3 border border-border/60 text-crimson hover:bg-crimson/5 transition-colors flex items-center justify-center gap-1.5"
+                        title="Delete Product"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Link
+                        to={`/product/${product.slug || product.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 text-xs tracking-widest uppercase py-2 border border-border/60 text-muted-foreground hover:text-foreground hover:border-ink/30 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <ExternalLink size={12} />
+                        View in Store
+                      </Link>
+                    </div>
+                  )}
 
                   <AnimatePresence>
                     {isExpanded && (
