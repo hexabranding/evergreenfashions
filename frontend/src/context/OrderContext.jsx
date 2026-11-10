@@ -626,8 +626,8 @@ const placeOrder = useCallback(
       if (updated) {
         updateOrderInAllStates(orderId, mapApiOrder(updated));
       }
-    } catch {
-      /* fallback handled locally */
+    } catch (err) {
+      console.error("Failed to confirm return on server:", err);
     }
   }, [restoreStock, updateOrderInAllStates]);
 
@@ -651,8 +651,8 @@ const placeOrder = useCallback(
       if (updated) {
         updateOrderInAllStates(orderId, mapApiOrder(updated));
       }
-    } catch {
-      /* fallback handled locally */
+    } catch (err) {
+      console.error("Failed to complete refund on server:", err);
     }
   }, [updateOrderInAllStates]);
 
