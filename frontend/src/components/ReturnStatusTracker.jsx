@@ -198,6 +198,15 @@ export default function ReturnStatusTracker({
 
       {/* Photos Preview & Return Action Area */}
       <div className="mt-4 pt-3 border-t border-border/60">
+        {order.returnReason && (
+          <div className="mb-3 bg-cream/70 dark:bg-zinc-900/60 border border-border/60 rounded-sm px-3.5 py-2.5 text-xs flex items-start gap-2">
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground whitespace-nowrap mt-0.5">
+              Return Reason:
+            </span>
+            <p className="text-xs sm:text-sm text-foreground font-medium leading-relaxed">{order.returnReason}</p>
+          </div>
+        )}
+
         {hasPhotos ? (
           <div className="space-y-3">
             <ReturnPhotoGallery

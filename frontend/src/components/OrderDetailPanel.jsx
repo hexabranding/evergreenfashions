@@ -29,10 +29,11 @@ function formatPayment(payment) {
   return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
-export default function OrderDetailPanel({ order, showCustomer = true }) {
+export default function OrderDetailPanel({ order, showCustomer = true, showReturnReview }) {
   if (!order) return null;
 
   const items = order.items || [];
+  const shouldShowReturnReview = showReturnReview ?? Boolean(order.rentalDetails);
 
   return (
     <div className="mt-4 pt-4 border-t border-border/60 space-y-5">
@@ -160,7 +161,7 @@ export default function OrderDetailPanel({ order, showCustomer = true }) {
         </div>
       </div>
 
-      {(order.returnRequested || order.status === "return_requested" || order.status === "returned" || (order.returnPhotos || []).length > 0) && (
+      {shouldShowReturnReview && (order.returnRequested || order.status === "return_requested" || order.status === "returned" || (order.returnPhotos || []).length > 0) && (
         <div className="bg-cream/60 border border-border/50 rounded-sm p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">

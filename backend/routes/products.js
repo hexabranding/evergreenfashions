@@ -311,6 +311,19 @@ router.put('/:id/stock', authMiddleware, vendorOnly, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
+    if (req.user.role === 'vendor') {
+      const currentId = req.user.id || req.user._id?.toString();
+      const storeName = req.user.vendorStore?.name?.trim().toLowerCase();
+      const isOwner =
+        (product.vendorId && (product.vendorId === currentId || (product.vendorId === 'vendor-1' && currentId === 'vendor-1'))) ||
+        (product.vendor && storeName && product.vendor.trim().toLowerCase() === storeName) ||
+        (currentId === 'vendor-1' && (!product.vendorId || product.vendorId === 'ef-main'));
+
+      if (!isOwner) {
+        return res.status(403).json({ error: "Forbidden: You can only update inventory for your own products" });
+      }
+    }
+
     const { stock } = req.body;
     if (!stock || !Array.isArray(stock)) {
       return res.status(400).json({ error: 'Stock array is required' });

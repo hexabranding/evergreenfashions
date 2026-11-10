@@ -55,7 +55,6 @@ const statusColors = {
 const statusSteps = ["confirmed", "preparing", "dispatched", "shipped", "delivered"];
 
 const hasReturnPhotos = (order) => (order?.returnPhotos || []).length > 0;
-const isReturnPending = (order) => !!order?.returnRequested || order?.status === "return_requested";
 
 const fadeSlide = {
   initial: { opacity: 0, y: 12 },
@@ -273,21 +272,6 @@ export default function Account() {
     setReturnPhotos([]);
     setReturnStep(1);
     setReturnRequestSent(false);
-  };
-
-  const handleInlinePhotos = async (orderId, files) => {
-    const order = orders.find((o) => o.id === orderId);
-    const existing = order?.returnPhotos || [];
-    const next = await collectPhotos(files, existing);
-    if (next.length === existing.length) return;
-    try {
-      const { offline } = await uploadReturnPhotos(orderId, next.slice(existing.length));
-      setPhotoError(
-        offline ? "Server unreachable — photos were saved on this device only and have not reached our team." : ""
-      );
-    } catch (err) {
-      setPhotoError(formatUploadError(err));
-    }
   };
 
   const handleAddressSubmit = (e) => {
@@ -863,34 +847,6 @@ export default function Account() {
                                   );
                                 })()}
 
-                                {(isReturnPending(order) || hasReturnPhotos(order)) && (
-                                  <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center justify-between mb-3">
-                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground">Return Item Photos</h4>
-                                      {isReturnPending(order) && !hasReturnPhotos(order) && (
-                                        <span className="text-[11px] text-amber-600 font-medium">At least 1 photo required</span>
-                                      )}
-                                    </div>
-                                    {hasReturnPhotos(order) && (
-                                      <div className="mb-3">
-                                        <ReturnPhotoGallery
-                                          photos={order.returnPhotos}
-                                          title={order.status === "returned" ? "Photos (reviewed by our team)" : "Uploaded photos"}
-                                        />
-                                      </div>
-                                    )}
-                                    {isReturnPending(order) && (
-                                      <ReturnPhotoUploader
-                                        photos={order.returnPhotos || []}
-                                        onFiles={(files) => handleInlinePhotos(order.id, files)}
-                                        uploading={photoBusy}
-                                        hint="Tap a photo to enlarge. Our team reviews these before confirming your return."
-                                      />
-                                    )}
-                                    {photoError && <p className="text-[11px] text-crimson mt-1">{photoError}</p>}
-                                  </div>
-                                )}
-
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">
                                     Total: {parsePrice(order.total)}
@@ -1236,34 +1192,6 @@ export default function Account() {
                                     </div>
                                   );
                                 })()}
-
-                                {(isReturnPending(order) || hasReturnPhotos(order)) && (
-                                  <div className="mb-6 pt-4 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center justify-between mb-3">
-                                      <h4 className="text-xs font-serif uppercase tracking-widest text-muted-foreground">Return Item Photos</h4>
-                                      {isReturnPending(order) && !hasReturnPhotos(order) && (
-                                        <span className="text-[11px] text-amber-600 font-medium">At least 1 photo required</span>
-                                      )}
-                                    </div>
-                                    {hasReturnPhotos(order) && (
-                                      <div className="mb-3">
-                                        <ReturnPhotoGallery
-                                          photos={order.returnPhotos}
-                                          title={order.status === "returned" ? "Photos (reviewed by our team)" : "Uploaded photos"}
-                                        />
-                                      </div>
-                                    )}
-                                    {isReturnPending(order) && (
-                                      <ReturnPhotoUploader
-                                        photos={order.returnPhotos || []}
-                                        onFiles={(files) => handleInlinePhotos(order.id, files)}
-                                        uploading={photoBusy}
-                                        hint="Tap a photo to enlarge. Our team reviews these before inspecting your return."
-                                      />
-                                    )}
-                                    {photoError && <p className="text-[11px] text-crimson mt-1">{photoError}</p>}
-                                  </div>
-                                )}
 
                                 <div className="flex items-center justify-between pt-3 border-t border-border">
                                   <p className="text-sm font-medium text-foreground">

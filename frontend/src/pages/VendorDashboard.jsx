@@ -248,6 +248,7 @@ export default function VendorDashboard() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("all");
+  const [inventoryTab, setInventoryTab] = useState("all");
   const [productSearch, setProductSearch] = useState("");
   const [productTab, setProductTab] = useState("all");
   const [rentalTab, setRentalTab] = useState("all");
@@ -753,6 +754,10 @@ export default function VendorDashboard() {
   const handleLocalStockChange = async (productId, size, qty) => {
     const product = vendorProducts.find((item) => item.id === productId);
     if (!product) return;
+    if (!isMyProduct(product)) {
+      alert("You can only modify inventory for your own products.");
+      return;
+    }
     const stock = { ...getStockForProduct(product), [size]: Math.max(0, parseInt(qty) || 0) };
     setLocalInventory((prev) => ({ ...prev, [productId]: stock }));
     try {
@@ -989,7 +994,9 @@ export default function VendorDashboard() {
     return { label: "In Stock", color: "text-emerald-600", bg: "bg-emerald-50" };
   };
 
-  const filteredInventoryProducts = vendorProducts.filter((p) => {
+  const activeInventoryList = inventoryTab === "my" ? myProductsList : allProductsList;
+
+  const filteredInventoryProducts = activeInventoryList.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
       p.category.toLowerCase().includes(inventorySearch.toLowerCase());
     if (inventoryFilter === "all") return matchesSearch;
@@ -1599,22 +1606,59 @@ export default function VendorDashboard() {
         </div>
       </div>
 
+      {/* Inventory Sub-Tabs: Tab 1: All Products | Tab 2: My Products */}
+      <div className="flex border-b border-border/80 gap-2">
+        <button
+          type="button"
+          onClick={() => setInventoryTab("all")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            inventoryTab === "all"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          All Products
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            inventoryTab === "all" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {allProductsList.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setInventoryTab("my")}
+          className={`pb-3 px-4 text-xs uppercase tracking-wider font-serif flex items-center gap-2 border-b-2 transition-colors ${
+            inventoryTab === "my"
+              ? "border-ink text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          My Products
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+            inventoryTab === "my" ? "bg-ink text-cream" : "bg-secondary text-muted-foreground"
+          }`}>
+            {myProductsList.length}
+          </span>
+        </button>
+      </div>
+
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-secondary border border-border/60 rounded-sm p-4 text-center">
           <p className="text-display text-2xl text-emerald-600">
-            {vendorProducts.filter((p) => getInventoryStatus(p.slug || p.id).label === "In Stock").length}
+            {activeInventoryList.filter((p) => getInventoryStatus(p.slug || p.id).label === "In Stock").length}
           </p>
           <p className="text-xs text-muted-foreground mt-1">In Stock</p>
         </div>
         <div className="bg-secondary border border-border/60 rounded-sm p-4 text-center">
           <p className="text-display text-2xl text-amber-600">
-            {vendorProducts.filter((p) => getInventoryStatus(p.slug || p.id).label === "Low Stock").length}
+            {activeInventoryList.filter((p) => getInventoryStatus(p.slug || p.id).label === "Low Stock").length}
           </p>
           <p className="text-xs text-muted-foreground mt-1">Low Stock</p>
         </div>
         <div className="bg-secondary border border-border/60 rounded-sm p-4 text-center">
           <p className="text-display text-2xl text-red-600">
-            {vendorProducts.filter((p) => getInventoryStatus(p.slug || p.id).label === "Out of Stock").length}
+            {activeInventoryList.filter((p) => getInventoryStatus(p.slug || p.id).label === "Out of Stock").length}
           </p>
           <p className="text-xs text-muted-foreground mt-1">Out of Stock</p>
         </div>
@@ -1624,7 +1668,7 @@ export default function VendorDashboard() {
         <EmptyState
           icon={Tag}
           title="No Products Found"
-          description="No products match your current filter."
+          description={inventoryTab === "my" ? "You have not added any products yet." : "No products match your current filter."}
         />
       ) : (
         <div className="bg-secondary border border-border/60 rounded-sm overflow-hidden">
@@ -1649,27 +1693,49 @@ export default function VendorDashboard() {
                   const productStock = getStockForProduct(product);
                   const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
                   const status = getInventoryStatus(slug);
+                  const isMine = isMyProduct(product);
 
                   return (
                     <tr key={product.id} className="border-b border-border/30 hover:bg-cream/30 transition-colors">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-12 rounded-sm overflow-hidden flex-shrink-0">
+                          <div className="w-10 h-12 rounded-sm overflow-hidden flex-shrink-0 bg-secondary">
                             <img src={product.img} alt={product.name} className="w-full h-full object-cover" />
                           </div>
-                          <span className="font-medium text-foreground">{product.name}</span>
+                          <div>
+                            <span className="font-medium text-foreground block">{product.name}</span>
+                            {isMine ? (
+                              <span className="inline-block mt-0.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-xs font-semibold bg-emerald-100 text-emerald-800">
+                                Your Product
+                              </span>
+                            ) : (
+                              <span className="inline-block mt-0.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-xs font-medium bg-zinc-200/70 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                                Other Vendor
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{product.category}</td>
                       {product.sizes.map((size) => (
                         <td key={size} className="py-3 px-4 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            value={productStock[size] ?? 0}
-                            onChange={(e) => handleLocalStockChange(product.id, size, parseInt(e.target.value) || 0)}
-                            className="w-14 bg-cream border border-border/60 rounded-sm px-2 py-1 text-sm text-center text-foreground focus:outline-none focus:ring-1 focus:ring-ink/30"
-                          />
+                          {isMine ? (
+                            <input
+                              type="number"
+                              min={0}
+                              value={productStock[size] ?? 0}
+                              onChange={(e) => handleLocalStockChange(product.id, size, parseInt(e.target.value) || 0)}
+                              className="w-14 bg-cream border border-border/60 rounded-sm px-2 py-1 text-sm text-center text-foreground focus:outline-none focus:ring-1 focus:ring-ink/30"
+                              title="Edit stock for your product"
+                            />
+                          ) : (
+                            <span
+                              className="inline-block w-14 py-1 text-sm text-center text-muted-foreground font-mono"
+                              title="Inventory of another vendor (read-only)"
+                            >
+                              {productStock[size] ?? 0}
+                            </span>
+                          )}
                         </td>
                       ))}
                       <td className="py-3 px-4 text-center font-medium text-foreground">{totalStock}</td>

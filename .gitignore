@@ -43,3 +43,6 @@ Thumbs.db
 backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
+
+# Runtime uploaded return photos (customer proof images should not be pushed to Git)
+frontend/public/uploads/return-*
