@@ -62,6 +62,10 @@ import {
   MousePointerClick,
   User,
   Lock,
+  Mail,
+  Phone,
+  CreditCard,
+  Calendar,
 } from "lucide-react";
 
 const MOCK_CATEGORIES = [
@@ -447,15 +451,20 @@ const [newVendorForm, setNewVendorForm] = useState({
         firstName: u.firstName,
         lastName: u.lastName,
         email: u.email,
+        phone: u.phone || "",
         storeName: u.vendorStore?.name || `${u.firstName} ${u.lastName}`,
         description: u.vendorStore?.description || "",
         commission: u.vendorStore?.commission || 15,
+        logo: u.vendorStore?.logo || "",
+        bankAccount: u.vendorStore?.bankAccount || "",
+        taxId: u.vendorStore?.taxId || "",
         suspended: false,
         totalProducts: 0,
         totalSales: 0,
         totalEarnings: 0,
         pendingPayout: 0,
         joinedAt: u.createdAt?.slice(0, 10) || "N/A",
+        createdAt: u.createdAt,
       })));
     }).catch((err) => console.error("Failed to load users:", err));
   }, []);
@@ -711,27 +720,76 @@ const [newVendorForm, setNewVendorForm] = useState({
     }, "Ban Vendor");
   };
 
+  const handleSelectVendor = async (vendor) => {
+    setSelectedVendor(vendor);
+    setVendorDetailTab("info");
+    try {
+      const freshUser = await authApi.admin.getUser(vendor.id);
+      if (freshUser) {
+        setSelectedVendor((prev) => ({
+          ...prev,
+          firstName: freshUser.firstName || prev?.firstName || "",
+          lastName: freshUser.lastName || prev?.lastName || "",
+          email: freshUser.email || prev?.email || "",
+          phone: freshUser.phone || prev?.phone || "",
+          storeName: freshUser.vendorStore?.name || prev?.storeName || "",
+          description: freshUser.vendorStore?.description || prev?.description || "",
+          commission: freshUser.vendorStore?.commission ?? prev?.commission ?? 15,
+          logo: freshUser.vendorStore?.logo || prev?.logo || "",
+          bankAccount: freshUser.vendorStore?.bankAccount || prev?.bankAccount || "",
+          taxId: freshUser.vendorStore?.taxId || prev?.taxId || "",
+          createdAt: freshUser.createdAt || prev?.createdAt,
+        }));
+      }
+    } catch (_e) {
+      // keep initial vendor object
+    }
+  };
+
   const startEditVendor = (v) => {
     setEditingVendor(v.id);
-    setEditVendorForm({ storeName: v.storeName || v.name || "", description: v.description || "", commission: v.commission || 15 });
+    setEditVendorForm({
+      firstName: v.firstName || "",
+      lastName: v.lastName || "",
+      phone: v.phone || "",
+      storeName: v.storeName || v.name || "",
+      description: v.description || "",
+      commission: v.commission || 15,
+      bankAccount: v.bankAccount || "",
+      taxId: v.taxId || "",
+    });
   };
 
   const saveEditVendor = async () => {
     try {
       await authApi.admin.updateUser(editingVendor, {
-        firstName: selectedVendor.firstName,
-        lastName: selectedVendor.lastName,
-        email: selectedVendor.email,
+        firstName: editVendorForm.firstName || selectedVendor?.firstName,
+        lastName: editVendorForm.lastName || selectedVendor?.lastName,
+        email: selectedVendor?.email,
+        phone: editVendorForm.phone || "",
         vendorStore: {
           name: editVendorForm.storeName,
           description: editVendorForm.description,
           commission: editVendorForm.commission,
+          logo: selectedVendor?.logo || "",
+          bankAccount: editVendorForm.bankAccount || "",
+          taxId: editVendorForm.taxId || "",
         },
       });
+      const updatedFields = {
+        firstName: editVendorForm.firstName || selectedVendor?.firstName,
+        lastName: editVendorForm.lastName || selectedVendor?.lastName,
+        phone: editVendorForm.phone || "",
+        storeName: editVendorForm.storeName,
+        description: editVendorForm.description,
+        commission: editVendorForm.commission,
+        bankAccount: editVendorForm.bankAccount || "",
+        taxId: editVendorForm.taxId || "",
+      };
       setVendors((prev) => prev.map((v) =>
-        v.id === editingVendor ? { ...v, ...editVendorForm } : v
+        v.id === editingVendor ? { ...v, ...updatedFields } : v
       ));
-      setSelectedVendor((prev) => (prev && prev.id === editingVendor ? { ...prev, ...editVendorForm } : prev));
+      setSelectedVendor((prev) => (prev && prev.id === editingVendor ? { ...prev, ...updatedFields } : prev));
       setEditingVendor(null);
     } catch (err) {
       alert(err.message || "Failed to update vendor");
@@ -1620,9 +1678,65 @@ const [newVendorForm, setNewVendorForm] = useState({
   );
 
   const renderVendors = () => {
+    const vId = selectedVendor?.id;
+    const sName = (selectedVendor?.storeName || selectedVendor?.name || "").trim().toLowerCase();
     const vendorProducts = selectedVendor
-      ? products.filter((p) => p.vendor === (selectedVendor.storeName || selectedVendor.name))
+      ? products.filter((p) => {
+          if (p.vendorId && (p.vendorId === vId || p.vendorId === selectedVendor?.userId)) return true;
+          if (p.vendor && sName && p.vendor.trim().toLowerCase() === sName) return true;
+          const isAtelierParis = vId === "vendor-1" || sName === "atelier paris";
+          if (isAtelierParis && (p.vendorId === "vendor-1" || p.vendorId === "ef-main" || !p.vendorId)) return true;
+          return false;
+        })
       : [];
+
+    const vendorStatsForSelected = (() => {
+      if (!selectedVendor) return { totalSales: 0, totalRevenue: 0, totalOrders: 0, totalEarnings: 0, commissionPaid: 0, pendingPayout: 0 };
+      const vProdIds = new Set(vendorProducts.map((p) => String(p.id || p._id || p.slug || "")));
+      const vProdNames = new Set(vendorProducts.map((p) => (p.name || "").trim().toLowerCase()));
+
+      let totalOrdersCount = 0;
+      let unitsSold = 0;
+      let totalRevenue = 0;
+
+      const ordersToScan = adminApiOrders.length > 0 ? adminApiOrders : (contextOrders || []);
+      ordersToScan.forEach((order) => {
+        if (order.status === "cancelled" || order.rentalStatus === "cancelled") return;
+        const items = order.items || [];
+        const matchingItems = items.filter((item) => {
+          if (item.vendorId && (item.vendorId === vId || item.vendorId === selectedVendor?.userId)) return true;
+          if (item.vendor && sName && item.vendor.trim().toLowerCase() === sName) return true;
+          const itemId = String(item.productId || "");
+          const itemName = (item.name || "").trim().toLowerCase();
+          if (itemId && vProdIds.has(itemId)) return true;
+          if (itemName && vProdNames.has(itemName)) return true;
+          return false;
+        });
+
+        if (matchingItems.length > 0) {
+          totalOrdersCount += 1;
+          matchingItems.forEach((item) => {
+            const qty = Number(item.quantity) || 1;
+            const price = Number(item.price) || 0;
+            unitsSold += qty;
+            totalRevenue += price * qty;
+          });
+        }
+      });
+
+      const commRate = Number(selectedVendor.commission) || 15;
+      const commissionPaid = Math.round(totalRevenue * (commRate / 100));
+      const netEarnings = Math.max(0, totalRevenue - commissionPaid);
+
+      return {
+        totalSales: unitsSold,
+        totalRevenue,
+        totalOrders: totalOrdersCount,
+        totalEarnings: netEarnings,
+        commissionPaid,
+        pendingPayout: netEarnings,
+      };
+    })();
 
     return (
       <div className="space-y-6">
@@ -1752,7 +1866,7 @@ const [newVendorForm, setNewVendorForm] = useState({
                   <span className="text-foreground font-serif">{vendor.joinedAt || "N/A"}</span>
                 </div>
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  <button onClick={() => setSelectedVendor(vendor)} className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-border text-xs uppercase tracking-wider text-foreground hover:bg-secondary transition-colors">
+                  <button onClick={() => handleSelectVendor(vendor)} className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-border text-xs uppercase tracking-wider text-foreground hover:bg-secondary transition-colors">
                     <Eye size={14} /> View
                   </button>
                   <button onClick={() => startEditVendor(vendor)} className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-border text-xs uppercase tracking-wider text-foreground hover:bg-secondary transition-colors">
@@ -1819,6 +1933,49 @@ const [newVendorForm, setNewVendorForm] = useState({
                     <>
                       {editingVendor === selectedVendor.id ? (
                         <div className="space-y-4">
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">First Name</label>
+                              <input
+                                type="text"
+                                value={editVendorForm.firstName || ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Last Name</label>
+                              <input
+                                type="text"
+                                value={editVendorForm.lastName || ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Phone</label>
+                              <input
+                                type="text"
+                                value={editVendorForm.phone || ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, phone: e.target.value }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                                placeholder="+33 6 12 34 56 78"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Commission (%)</label>
+                              <input
+                                type="number"
+                                min="5"
+                                max="40"
+                                value={editVendorForm.commission}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, commission: parseInt(e.target.value) || 15 }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                              />
+                            </div>
+                          </div>
                           <div>
                             <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Store Name</label>
                             <input
@@ -1829,24 +1986,35 @@ const [newVendorForm, setNewVendorForm] = useState({
                             />
                           </div>
                           <div>
-                            <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Description</label>
-                            <input
-                              type="text"
+                            <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Store Description</label>
+                            <textarea
+                              rows={3}
                               value={editVendorForm.description}
                               onChange={(e) => setEditVendorForm((prev) => ({ ...prev, description: e.target.value }))}
-                              className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
+                              className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 resize-none"
                             />
                           </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Commission (%)</label>
-                            <input
-                              type="number"
-                              min="5"
-                              max="40"
-                              value={editVendorForm.commission}
-                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, commission: parseInt(e.target.value) || 15 }))}
-                              className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30"
-                            />
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Bank Account / IBAN</label>
+                              <input
+                                type="text"
+                                value={editVendorForm.bankAccount || ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, bankAccount: e.target.value }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 font-mono"
+                                placeholder="FR76..."
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-wider text-muted-foreground font-serif block mb-2">Tax ID / VAT Number</label>
+                              <input
+                                type="text"
+                                value={editVendorForm.taxId || ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, taxId: e.target.value }))}
+                                className="w-full px-4 py-2.5 bg-cream border border-border text-foreground text-sm focus:outline-none focus:border-ink/30 font-mono"
+                                placeholder="FR12345678901"
+                              />
+                            </div>
                           </div>
                           <div className="flex gap-3 pt-4 border-t border-border">
                             <button onClick={saveEditVendor} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
@@ -1859,46 +2027,131 @@ const [newVendorForm, setNewVendorForm] = useState({
                         </div>
                       ) : (
                         <div className="space-y-6">
-                          <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 rounded-full bg-ink/10 flex items-center justify-center">
-                              <Store size={20} className="text-ink" />
+                          {/* Store Header Banner */}
+                          <div className="flex items-center gap-4 p-4 bg-secondary/40 border border-border/60 rounded-sm">
+                            <div className="w-16 h-16 rounded-sm bg-cream border border-border/60 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {selectedVendor.logo ? (
+                                <img src={selectedVendor.logo} alt={selectedVendor.storeName} className="w-full h-full object-cover" />
+                              ) : (
+                                <Store size={26} className="text-muted-foreground" />
+                              )}
                             </div>
-                            <div>
+                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <h4 className="font-serif text-lg text-foreground">{selectedVendor.storeName || selectedVendor.name}</h4>
+                                <h4 className="font-serif text-xl text-foreground font-medium truncate">{selectedVendor.storeName || selectedVendor.name}</h4>
                                 {selectedVendor.suspended && <StatusBadge status="suspended" />}
                               </div>
-                              <p className="text-sm text-muted-foreground">{selectedVendor.description}</p>
+                              <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">{selectedVendor.description || "No store description provided."}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Member Since: <span className="text-foreground font-medium">{selectedVendor.createdAt ? new Date(selectedVendor.createdAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : (selectedVendor.joinedAt || "N/A")}</span>
+                              </p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="text-center p-4 bg-secondary/50">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Sales</p>
-                              <p className="font-serif text-xl text-foreground mt-1">{(selectedVendor.totalSales || 0).toLocaleString()}</p>
+
+                          {/* Personal Information */}
+                          <div className="border border-border/60 rounded-sm p-4 bg-background">
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-border/40">
+                              <User size={14} className="text-ink" />
+                              <h5 className="text-xs uppercase tracking-wider text-muted-foreground font-serif font-semibold">Personal Information</h5>
                             </div>
-                            <div className="text-center p-4 bg-secondary/50">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Earnings</p>
-                              <p className="font-serif text-xl text-foreground mt-1">${(selectedVendor.totalEarnings || 0).toLocaleString()}</p>
-                            </div>
-                            <div className="text-center p-4 bg-secondary/50">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider">Products</p>
-                              <p className="font-serif text-xl text-foreground mt-1">{vendorProducts.length}</p>
-                            </div>
-                            <div className="text-center p-4 bg-secondary/50">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pending Payout</p>
-                              <p className="font-serif text-xl text-crimson mt-1">${(selectedVendor.pendingPayout || 0).toLocaleString()}</p>
-                            </div>
-                          </div>
-                          <div className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Commission Rate</span>
-                              <span className="text-foreground">{selectedVendor.commission || 15}%</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Joined</span>
-                              <span className="text-foreground">{selectedVendor.joinedAt || "N/A"}</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <p className="text-xs text-muted-foreground">First Name</p>
+                                <p className="font-medium text-foreground mt-0.5">{selectedVendor.firstName || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Last Name</p>
+                                <p className="font-medium text-foreground mt-0.5">{selectedVendor.lastName || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Email</p>
+                                <p className="font-medium text-foreground mt-0.5 break-all">{selectedVendor.email || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Phone</p>
+                                <p className="font-medium text-foreground mt-0.5">{selectedVendor.phone || "Not provided"}</p>
+                              </div>
                             </div>
                           </div>
+
+                          {/* Store Information */}
+                          <div className="border border-border/60 rounded-sm p-4 bg-background">
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-border/40">
+                              <Store size={14} className="text-ink" />
+                              <h5 className="text-xs uppercase tracking-wider text-muted-foreground font-serif font-semibold">Store Information</h5>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Store Name</p>
+                                <p className="font-medium text-foreground mt-0.5">{selectedVendor.storeName || selectedVendor.name || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Store Description</p>
+                                <p className="font-medium text-foreground mt-0.5">{selectedVendor.description || "None"}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Payment Details */}
+                          <div className="border border-border/60 rounded-sm p-4 bg-background">
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-border/40">
+                              <CreditCard size={14} className="text-ink" />
+                              <h5 className="text-xs uppercase tracking-wider text-muted-foreground font-serif font-semibold">Payment Details</h5>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Bank Account / IBAN</p>
+                                <p className="font-mono text-sm text-foreground mt-0.5">{selectedVendor.bankAccount || "Not provided"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Tax ID / VAT Number</p>
+                                <p className="font-mono text-sm text-foreground mt-0.5">{selectedVendor.taxId || "Not provided"}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Commission & Performance Stats */}
+                          <div className="border border-border/60 rounded-sm p-4 bg-background">
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-border/40">
+                              <BarChart3 size={14} className="text-ink" />
+                              <h5 className="text-xs uppercase tracking-wider text-muted-foreground font-serif font-semibold">Commission & Stats</h5>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Commission Rate</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{selectedVendor.commission || 15}%</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Total Products</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{vendorProducts.length}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Total Orders</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{vendorStatsForSelected.totalOrders}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Units Sold</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{vendorStatsForSelected.totalSales}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Gross Sales</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{parsePrice(vendorStatsForSelected.totalRevenue)}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Net Earnings</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{parsePrice(vendorStatsForSelected.totalEarnings)}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Commission Paid</p>
+                                <p className="font-serif text-lg text-foreground mt-1">{parsePrice(vendorStatsForSelected.commissionPaid)}</p>
+                              </div>
+                              <div className="text-center p-3 bg-secondary/50 rounded-sm">
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Pending Payout</p>
+                                <p className="font-serif text-lg text-crimson mt-1">{parsePrice(vendorStatsForSelected.pendingPayout)}</p>
+                              </div>
+                            </div>
+                          </div>
+
                           <div className="flex gap-3 pt-4 border-t border-border">
                             <button onClick={() => startEditVendor(selectedVendor)} className="flex-1 btn-ink btn-ink-hover py-2.5 text-xs">
                               <Edit2 size={14} /> Edit Vendor

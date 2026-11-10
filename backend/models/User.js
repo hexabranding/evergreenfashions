@@ -20,6 +20,9 @@ const vendorStoreSchema = new mongoose.Schema({
   name: String,
   description: String,
   commission: { type: Number, default: 15 },
+  logo: { type: String, default: '' },
+  bankAccount: { type: String, default: '' },
+  taxId: { type: String, default: '' },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

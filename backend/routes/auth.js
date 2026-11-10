@@ -157,6 +157,9 @@ router.put('/me', authMiddleware, async (req, res) => {
         name: vendorStore.name ?? user.vendorStore?.name,
         description: vendorStore.description ?? user.vendorStore?.description,
         commission: vendorStore.commission ?? user.vendorStore?.commission,
+        logo: vendorStore.logo ?? user.vendorStore?.logo ?? '',
+        bankAccount: vendorStore.bankAccount ?? user.vendorStore?.bankAccount ?? '',
+        taxId: vendorStore.taxId ?? user.vendorStore?.taxId ?? '',
       };
     }
     await user.save();
@@ -362,6 +365,9 @@ router.put('/users/:id', authMiddleware, vendorOnly, async (req, res) => {
         name: vendorStore.name ?? user.vendorStore?.name,
         description: vendorStore.description ?? user.vendorStore?.description,
         commission: vendorStore.commission ?? user.vendorStore?.commission,
+        logo: vendorStore.logo ?? user.vendorStore?.logo ?? '',
+        bankAccount: vendorStore.bankAccount ?? user.vendorStore?.bankAccount ?? '',
+        taxId: vendorStore.taxId ?? user.vendorStore?.taxId ?? '',
       };
     }
     await user.save();

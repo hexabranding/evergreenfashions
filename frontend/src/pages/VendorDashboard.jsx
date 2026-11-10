@@ -710,11 +710,11 @@ export default function VendorDashboard() {
         lastName: currentUser.lastName || "",
         email: currentUser.email || "",
         phone: currentUser.phone || "",
-        storeName: currentUser.vendorStore?.name || vendor.storeName,
-        storeDescription: currentUser.vendorStore?.description || vendor.description,
-        storeLogo: "",
-        bankAccount: "",
-        taxId: "",
+        storeName: currentUser.vendorStore?.name || vendor.storeName || "",
+        storeDescription: currentUser.vendorStore?.description || vendor.description || "",
+        storeLogo: currentUser.vendorStore?.logo || "",
+        bankAccount: currentUser.vendorStore?.bankAccount || "",
+        taxId: currentUser.vendorStore?.taxId || "",
       });
     }
   };
@@ -730,6 +730,9 @@ export default function VendorDashboard() {
         ...currentUser.vendorStore,
         name: profileForm.storeName,
         description: profileForm.storeDescription,
+        logo: profileForm.storeLogo || "",
+        bankAccount: profileForm.bankAccount || "",
+        taxId: profileForm.taxId || "",
       },
     };
     try {
