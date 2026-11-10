@@ -27,6 +27,7 @@ const productSchema = new mongoose.Schema({
   approvalReason: { type: String, default: '' },
   approvedBy: { type: String, default: null },
   approvedAt: { type: String, default: null },
+  views: { type: Number, default: 0 },
 }, { timestamps: true });
 
 export default mongoose.model('Product', productSchema);

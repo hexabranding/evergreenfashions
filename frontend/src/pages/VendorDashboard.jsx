@@ -117,27 +117,6 @@ const fadeUp = {
   }),
 };
 
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function deterministicProductStats(productId) {
-  const h = simpleHash(productId);
-  return {
-    views: (h % 600) + 200,
-    orders: (h % 35) + 5,
-    revenueMultiplier: (h % 25) + 5,
-    totalRentals: (h % 15) + 5,
-    estMonthlyRentals: (h % 12) + 3,
-  };
-}
-
 function StatCard({ icon: Icon, label, value, change, changeType, index }) {
   return (
     <motion.div
@@ -515,6 +494,91 @@ export default function VendorDashboard() {
     }
     return [];
   }, [isItemForVendor, vendor?.id, currentUser?.id]);
+
+  const getProductRealStats = useCallback((product) => {
+    if (!product) return { orders: 0, revenue: 0, unitsSold: 0, views: 0 };
+
+    const prodId = String(product.id || product._id || "").trim();
+    const prodName = (product.name || "").trim().toLowerCase();
+
+    let ordersCount = 0;
+    let unitsSold = 0;
+    let revenue = 0;
+
+    vendorOrders.forEach((order) => {
+      if (order.status === "cancelled" || order.rentalStatus === "cancelled") return;
+
+      const items = order.items || [];
+      const matchingItems = items.filter((item) => {
+        const itemId = String(item.productId || "").trim();
+        const itemName = (item.name || "").trim().toLowerCase();
+        return (prodId && itemId === prodId) || (prodName && itemName === prodName);
+      });
+
+      if (matchingItems.length > 0) {
+        ordersCount += 1;
+        matchingItems.forEach((item) => {
+          const qty = Number(item.quantity) || 1;
+          const price = Number(item.price) || Number(product.price) || 0;
+          unitsSold += qty;
+          revenue += price * qty;
+        });
+      }
+    });
+
+    let localViews = 0;
+    try {
+      localViews = parseInt(localStorage.getItem(`ef_views_${prodId}`) || "0", 10);
+    } catch {}
+    const views = Math.max(Number(product.views) || 0, localViews);
+
+    return {
+      orders: ordersCount,
+      unitsSold,
+      revenue,
+      views,
+    };
+  }, [vendorOrders]);
+
+  const getRentalProductRealStats = useCallback((product) => {
+    if (!product) return { activeRentals: 0, totalRentals: 0, totalRentalRevenue: 0 };
+
+    const prodId = String(product.id || product._id || "").trim();
+    const prodName = (product.name || "").trim().toLowerCase();
+
+    let activeRentals = 0;
+    let totalRentals = 0;
+    let totalRentalRevenue = 0;
+
+    rentalOrders.forEach((ro) => {
+      if (ro.status === "cancelled" || ro.rentalStatus === "cancelled") return;
+
+      const items = ro.items || [];
+      const matchingItems = items.filter((item) => {
+        const itemId = String(item.productId || "").trim();
+        const itemName = (item.name || "").trim().toLowerCase();
+        return (prodId && itemId === prodId) || (prodName && itemName === prodName);
+      });
+
+      if (matchingItems.length > 0) {
+        totalRentals += 1;
+        if (ro.status === "active" || ro.rentalStatus === "active") {
+          activeRentals += 1;
+        }
+        matchingItems.forEach((item) => {
+          const qty = Number(item.quantity) || 1;
+          const price = Number(item.price) || (Number(product.rentalPricePerDay) * (Number(item.rentalDays) || 1)) || 0;
+          totalRentalRevenue += price * qty;
+        });
+      }
+    });
+
+    return {
+      activeRentals,
+      totalRentals,
+      totalRentalRevenue,
+    };
+  }, [rentalOrders]);
 
   const allTimeEarnings = useMemo(() => {
     let sales = 0;
@@ -1143,7 +1207,7 @@ export default function VendorDashboard() {
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
             const isExpanded = expandedProduct === product.id;
-            const stats = deterministicProductStats(product.id);
+            const stats = getProductRealStats(product);
             const stockStatus =
               totalStock === 0
                 ? { label: "Out of Stock", color: "text-red-600" }
@@ -1226,7 +1290,7 @@ export default function VendorDashboard() {
                     </div>
                     <div>
                       <DollarSign size={14} className="mx-auto mb-1 opacity-60" />
-                      <span className="font-medium text-foreground">{parsePrice(Math.floor(product.price * stats.revenueMultiplier / 10))}</span>
+                      <span className="font-medium text-foreground">{parsePrice(stats.revenue)}</span>
                       <p>Revenue</p>
                     </div>
                   </div>
@@ -1414,10 +1478,7 @@ export default function VendorDashboard() {
             const isOwned = isMyProduct(product);
             const productStock = getStockForProduct(product);
             const totalStock = Object.values(productStock).reduce((a, b) => a + b, 0);
-            const rentalCount = rentalOrders.filter(
-              (ro) => ro.items.some((i) => i.name === product.name) && ro.status === "active"
-            ).length;
-            const stats = deterministicProductStats(product.id);
+            const rentalStats = getRentalProductRealStats(product);
 
             return (
               <motion.div
@@ -1451,15 +1512,15 @@ export default function VendorDashboard() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Active Rentals</p>
-                        <p className="text-sm font-medium text-foreground">{rentalCount}</p>
+                        <p className="text-sm font-medium text-foreground">{rentalStats.activeRentals}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Total Rentals</p>
-                        <p className="text-sm font-medium text-foreground">{stats.totalRentals}</p>
+                        <p className="text-sm font-medium text-foreground">{rentalStats.totalRentals}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Est. Monthly</p>
-                        <p className="text-sm font-medium text-foreground">{parsePrice(product.rentalPricePerDay * stats.estMonthlyRentals)}</p>
+                        <p className="text-xs text-muted-foreground">Rental Revenue</p>
+                        <p className="text-sm font-medium text-foreground">{parsePrice(rentalStats.totalRentalRevenue)}</p>
                       </div>
                     </div>
                     {isOwned ? (

@@ -62,11 +62,31 @@ router.get('/', optionalAuth, async (req, res) => {
 
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).lean();
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { views: 1 } },
+      { new: true }
+    ).lean();
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
     res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/view', async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { views: 1 } },
+      { new: true }
+    ).lean();
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    res.json({ views: product.views || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

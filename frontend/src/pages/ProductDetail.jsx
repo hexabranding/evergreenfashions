@@ -7,6 +7,7 @@ import SizeGuide from "@/components/SizeGuide";
 import ImageZoom from "@/components/ImageZoom";
 import { allProducts, colorMap, parsePrice } from "@/data/products";
 import { useProducts } from "@/context/ProductContext";
+import { productsApi } from "@/api/products";
 
 function getColorHex(c) {
   return colorMap[c] || "#ccc";
@@ -177,6 +178,16 @@ export default function ProductDetail() {
   const [sizeError, setSizeError] = useState(false);
 
   const product = products.find((p) => p.id === name);
+
+  useEffect(() => {
+    if (!product?.id) return;
+    try {
+      const key = `ef_views_${product.id}`;
+      const count = parseInt(localStorage.getItem(key) || "0", 10) + 1;
+      localStorage.setItem(key, String(count));
+    } catch {}
+    productsApi.recordView(product.id || product._id).catch(() => {});
+  }, [product?.id]);
 
   useEffect(() => {
     if (product?.colors?.length && !selectedColor) {

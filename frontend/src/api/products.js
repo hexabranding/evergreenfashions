@@ -12,4 +12,5 @@ export const productsApi = {
   getStock: (id) => api.get(`/products/${id}/stock`),
   updateStock: (id, stock) => api.put(`/products/${id}/stock`, { stock }),
   updateApproval: (id, { status, reason } = {}) => api.put(`/products/${id}/approval`, { status, reason }),
+  recordView: (id) => api.post(`/products/${id}/view`),
 };
