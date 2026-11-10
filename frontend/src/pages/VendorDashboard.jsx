@@ -526,17 +526,10 @@ export default function VendorDashboard() {
       }
     });
 
-    let localViews = 0;
-    try {
-      localViews = parseInt(localStorage.getItem(`ef_views_${prodId}`) || "0", 10);
-    } catch {}
-    const views = Math.max(Number(product.views) || 0, localViews);
-
     return {
       orders: ordersCount,
       unitsSold,
       revenue,
-      views,
     };
   }, [vendorOrders]);
 
@@ -1277,12 +1270,7 @@ export default function VendorDashboard() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground mb-3 pt-3 border-t border-border/40">
-                    <div>
-                      <Eye size={14} className="mx-auto mb-1 opacity-60" />
-                      <span className="font-medium text-foreground">{stats.views}</span>
-                      <p>Views</p>
-                    </div>
+                  <div className="grid grid-cols-2 gap-4 text-center text-xs text-muted-foreground mb-3 pt-3 border-t border-border/40">
                     <div>
                       <ShoppingBag size={14} className="mx-auto mb-1 opacity-60" />
                       <span className="font-medium text-foreground">{stats.orders}</span>
