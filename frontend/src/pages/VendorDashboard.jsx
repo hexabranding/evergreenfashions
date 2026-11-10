@@ -277,23 +277,31 @@ export default function VendorDashboard() {
   const [productModal, setProductModal] = useState(null);
   const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
 
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    adsApi.getAll().then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id || ad.id })))).catch(() => setVendorAds([]));
-    fetchVendorOrders();
-    const interval = setInterval(() => fetchVendorOrders(), 15000);
-    return () => clearInterval(interval);
-  }, [currentUser?.id, fetchVendorOrders]);
-  useEffect(() => {
-    if (!currentUser?.id) return;
+  const loadProducts = useCallback(() => {
     // Vendors use the same catalogue as the admin dashboard. Products created by an
     // admin are therefore visible immediately, even before a vendor is assigned.
     productsApi.getAll().then((data) => setVendorProductsList(
       [...data]
         .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-        .map((product) => ({ ...product, id: product._id || product.id, stock: Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])) }))
+        .map((product) => ({
+          ...product,
+          id: product._id || product.id,
+          stock: Object.fromEntries((product.inventory || []).map((item) => [item.size, item.stock])),
+        }))
     )).catch(() => setVendorProductsList(allProducts.map((product) => ({ ...product, stock: product.stock || {} }))));
-  }, [currentUser?.id]);
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    adsApi.getAll().then((data) => setVendorAds(data.map((ad) => ({ ...ad, id: ad._id || ad.id })))).catch(() => setVendorAds([]));
+    fetchVendorOrders();
+    loadProducts();
+    const interval = setInterval(() => {
+      fetchVendorOrders();
+      loadProducts();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id, fetchVendorOrders, loadProducts]);
 
   const handleAdImage = async (file) => {
     if (!file) return;
@@ -496,8 +504,9 @@ export default function VendorDashboard() {
   }, [isItemForVendor, vendor?.id, currentUser?.id]);
 
   const getProductRealStats = useCallback((product) => {
-    if (!product) return { orders: 0, revenue: 0, unitsSold: 0, views: 0 };
+    if (!product) return { orders: 0, revenue: 0, unitsSold: 0 };
 
+    const bStats = product.stats || {};
     const prodId = String(product.id || product._id || "").trim();
     const prodName = (product.name || "").trim().toLowerCase();
 
@@ -527,15 +536,16 @@ export default function VendorDashboard() {
     });
 
     return {
-      orders: ordersCount,
-      unitsSold,
-      revenue,
+      orders: Math.max(Number(bStats.orders) || 0, ordersCount),
+      unitsSold: Math.max(Number(bStats.unitsSold) || 0, unitsSold),
+      revenue: Math.max(Number(bStats.revenue) || 0, revenue),
     };
   }, [vendorOrders]);
 
   const getRentalProductRealStats = useCallback((product) => {
     if (!product) return { activeRentals: 0, totalRentals: 0, totalRentalRevenue: 0 };
 
+    const bStats = product.stats || {};
     const prodId = String(product.id || product._id || "").trim();
     const prodName = (product.name || "").trim().toLowerCase();
 
@@ -567,9 +577,9 @@ export default function VendorDashboard() {
     });
 
     return {
-      activeRentals,
-      totalRentals,
-      totalRentalRevenue,
+      activeRentals: Math.max(Number(bStats.activeRentals) || 0, activeRentals),
+      totalRentals: Math.max(Number(bStats.totalRentals) || 0, totalRentals),
+      totalRentalRevenue: Math.max(Number(bStats.totalRentalRevenue) || 0, totalRentalRevenue),
     };
   }, [rentalOrders]);
 
@@ -832,10 +842,11 @@ export default function VendorDashboard() {
       const mapped = {
         ...saved,
         id: saved._id || saved.id,
+        stats: saved.stats || (editingProduct ? editingProduct.stats : { orders: 0, unitsSold: 0, revenue: 0 }),
         stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])),
         approvalStatus: saved.approvalStatus || (editingProduct ? editingProduct.approvalStatus : "pending"),
       };
-      setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+      setVendorProductsList((prev) => editingProduct ? prev.map((item) => item.id === mapped.id ? { ...item, ...mapped } : item) : [mapped, ...prev]);
       setProductTab("my");
       setNewProductForm(false);
       setEditingProduct(null);
@@ -938,10 +949,11 @@ export default function VendorDashboard() {
       const mapped = {
         ...saved,
         id: saved._id || saved.id,
+        stats: saved.stats || (editingRentalProduct ? editingRentalProduct.stats : { activeRentals: 0, totalRentals: 0, totalRentalRevenue: 0 }),
         stock: Object.fromEntries((saved.inventory || []).map((item) => [item.size, item.stock])),
         approvalStatus: saved.approvalStatus || (editingRentalProduct ? editingRentalProduct.approvalStatus : "pending"),
       };
-      setVendorProductsList((prev) => editingRentalProduct ? prev.map((item) => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+      setVendorProductsList((prev) => editingRentalProduct ? prev.map((item) => item.id === mapped.id ? { ...item, ...mapped } : item) : [mapped, ...prev]);
       setNewRentalForm(false);
       setEditingRentalProduct(null);
       setProductModal({

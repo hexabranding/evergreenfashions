@@ -1,8 +1,82 @@
 import { Router } from 'express';
 import Product from '../models/Product.js';
+import Order from '../models/Order.js';
 import { authMiddleware, optionalAuth, vendorOnly, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
+
+export async function computeProductStatsMap() {
+  const orders = await Order.find({ status: { $nin: ['cancelled'] } }).lean();
+  const statsMap = {};
+
+  orders.forEach((order) => {
+    if (order.status === 'cancelled' || order.rentalStatus === 'cancelled') return;
+    const isOrderRental = Boolean(order.rentalDetails);
+
+    (order.items || []).forEach((item) => {
+      const pId = String(item.productId || '').trim();
+      const pName = String(item.name || '').trim().toLowerCase();
+
+      const uniqueKeys = [...new Set([pId, pName].filter(Boolean))];
+      uniqueKeys.forEach((key) => {
+        if (!statsMap[key]) {
+          statsMap[key] = {
+            orders: 0,
+            unitsSold: 0,
+            revenue: 0,
+            totalRentals: 0,
+            activeRentals: 0,
+            totalRentalRevenue: 0,
+          };
+        }
+      });
+
+      const qty = Number(item.quantity) || 1;
+      const price = Number(item.price) || 0;
+      const isRental = Boolean(item.isRental || item.rentalDetails || isOrderRental);
+
+      uniqueKeys.forEach((key) => {
+        const s = statsMap[key];
+        s.orders += 1;
+        s.unitsSold += qty;
+        s.revenue += price * qty;
+
+        if (isRental) {
+          s.totalRentals += 1;
+          if (order.status === 'active' || order.rentalStatus === 'active') {
+            s.activeRentals += 1;
+          }
+          const rentalPrice = Number(item.price) || 0;
+          s.totalRentalRevenue += rentalPrice * qty;
+        }
+      });
+    });
+  });
+
+  return statsMap;
+}
+
+export async function attachProductStats(products) {
+  if (!products || products.length === 0) return products;
+  const statsMap = await computeProductStatsMap();
+
+  return products.map((prod) => {
+    const pId = String(prod._id || prod.id || '').trim();
+    const pName = String(prod.name || '').trim().toLowerCase();
+    const stat = statsMap[pId] || statsMap[pName] || {
+      orders: 0,
+      unitsSold: 0,
+      revenue: 0,
+      totalRentals: 0,
+      activeRentals: 0,
+      totalRentalRevenue: 0,
+    };
+    return {
+      ...prod,
+      stats: stat,
+    };
+  });
+}
 
 router.get('/', optionalAuth, async (req, res) => {
   try {
@@ -54,7 +128,17 @@ router.get('/', optionalAuth, async (req, res) => {
     // Admins can see all statuses when not explicitly filtered
 
     const products = await Product.find(filter).lean();
-    res.json(products);
+    const enriched = await attachProductStats(products);
+    res.json(enriched);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/order-stats', async (req, res) => {
+  try {
+    const statsMap = await computeProductStatsMap();
+    res.json(statsMap);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -70,7 +154,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json(product);
+    const [enriched] = await attachProductStats([product]);
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -128,7 +213,8 @@ router.post('/', authMiddleware, vendorOnly, async (req, res) => {
       approvalStatus,
     });
 
-    res.status(201).json(product.toObject());
+    const [enriched] = await attachProductStats([product.toObject()]);
+    res.status(201).json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -160,7 +246,8 @@ router.put('/:id', authMiddleware, vendorOnly, async (req, res) => {
     if (inventory !== undefined) product.inventory = inventory;
 
     await product.save();
-    res.json(product.toObject());
+    const [enriched] = await attachProductStats([product.toObject()]);
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -184,7 +271,8 @@ router.put('/:id/approval', authMiddleware, adminOnly, async (req, res) => {
     product.approvedAt = new Date().toISOString();
 
     await product.save();
-    res.json(product.toObject());
+    const [enriched] = await attachProductStats([product.toObject()]);
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
